@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Included by CTest immediately after this target's PRE_TEST discovery script.
+# Keep the list in one quoted argument instead of round-tripping it through
+# GoogleTest's generated PROPERTIES arguments. Use actual discovered identities;
+# run-ctest.py independently checks them against the explicit expected ledger.
+foreach(chtholly_discovered_test IN LISTS @target@_discovered_tests)
+  set_tests_properties("${chtholly_discovered_test}" PROPERTIES LABELS "@category@;@capability@")
+endforeach()
+unset(chtholly_discovered_test)

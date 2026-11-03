@@ -1,0 +1,5 @@
+{
+  "schema_version": 1, "name": "regression.semantic.entry_name", "kind": "compile_fail",
+  "source": "entry.cns", "basis": "Bootstrap requires main; nearest positive: e2e.exit_codes.return_0",
+  "compile": { "exit_code": 1, "stderr": { "contains": ["entry.cns:1:4: error:", "single entry function 'main'"] } }
+}

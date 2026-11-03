@@ -23,8 +23,8 @@ Buffer::Buffer(std::string name, std::string text)
   }
 }
 
-auto Buffer::Read(const std::filesystem::path &path, std::string &error)
-    -> std::optional<Buffer> {
+auto Buffer::Read(const std::filesystem::path &path,
+                  std::string &error) -> std::optional<Buffer> {
   error.clear();
   std::error_code statusError;
   if (!std::filesystem::is_regular_file(path, statusError)) {
@@ -56,7 +56,8 @@ auto Buffer::slice(Span span) const -> std::string_view {
 
 auto Buffer::locate(std::size_t offset) const -> Location {
   offset = std::min(offset, Text.size());
-  const auto after = std::upper_bound(LineStarts.begin(), LineStarts.end(), offset);
+  const auto after =
+      std::upper_bound(LineStarts.begin(), LineStarts.end(), offset);
   const auto index = static_cast<std::size_t>(after - LineStarts.begin() - 1);
   return {index + 1, offset - LineStarts[index] + 1};
 }

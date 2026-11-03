@@ -33,24 +33,28 @@ namespace Chtholly::CodeGen {
 auto EmitObject(const SemIR::Program &program, std::string_view objectPath,
                 Diagnostic::Diagnostics &diagnostics) -> bool {
   static const bool initialized = [] {
-    return !llvm::InitializeNativeTarget() && !llvm::InitializeNativeTargetAsmPrinter();
+    return !llvm::InitializeNativeTarget() &&
+           !llvm::InitializeNativeTargetAsmPrinter();
   }();
   if (!initialized) {
-    diagnostics.error("code generation", "cannot initialize the LLVM X86 target");
+    diagnostics.error("code generation",
+                      "cannot initialize the LLVM X86 target");
     return false;
   }
   std::string error;
-  const auto *target = llvm::TargetRegistry::lookupTarget(BuildConfig::Target, error);
+  const auto *target =
+      llvm::TargetRegistry::lookupTarget(BuildConfig::Target, error);
   if (!target) {
     diagnostics.error("code generation", error);
     return false;
   }
   llvm::TargetOptions options;
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      BuildConfig::Target, "generic", "", options, std::nullopt,
-      std::nullopt, llvm::CodeGenOptLevel::None));
+      BuildConfig::Target, "generic", "", options, std::nullopt, std::nullopt,
+      llvm::CodeGenOptLevel::None));
   if (!machine) {
-    diagnostics.error("code generation", "cannot create the Windows x64 target machine");
+    diagnostics.error("code generation",
+                      "cannot create the Windows x64 target machine");
     return false;
   }
 
@@ -61,12 +65,13 @@ auto EmitObject(const SemIR::Program &program, std::string_view objectPath,
   module.setDataLayout(machine->createDataLayout());
   auto *type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
   auto *main = llvm::Function::Create(type, llvm::GlobalValue::ExternalLinkage,
-                                     "main", module);
+                                      "main", module);
   main->setCallingConv(llvm::CallingConv::C);
   auto *entry = llvm::BasicBlock::Create(context, "entry", main);
   llvm::IRBuilder<> builder(entry);
   builder.CreateRet(llvm::ConstantInt::get(
-      llvm::Type::getInt32Ty(context), static_cast<std::uint64_t>(program.returnValue())));
+      llvm::Type::getInt32Ty(context),
+      static_cast<std::uint64_t>(program.returnValue())));
 
   std::string verification;
   llvm::raw_string_ostream verificationStream(verification);
@@ -80,13 +85,15 @@ auto EmitObject(const SemIR::Program &program, std::string_view objectPath,
       llvm::StringRef(objectPath.data(), objectPath.size()), fileError,
       llvm::sys::fs::OF_None);
   if (fileError) {
-    diagnostics.error("object output", std::string(objectPath) + ": " + fileError.message());
+    diagnostics.error("object output",
+                      std::string(objectPath) + ": " + fileError.message());
     return false;
   }
   llvm::legacy::PassManager passes;
   if (machine->addPassesToEmitFile(passes, output, nullptr,
-                                  llvm::CodeGenFileType::ObjectFile)) {
-    diagnostics.error("code generation", "LLVM cannot emit a COFF object for the selected target");
+                                   llvm::CodeGenFileType::ObjectFile)) {
+    diagnostics.error("code generation",
+                      "LLVM cannot emit a COFF object for the selected target");
     return false;
   }
   passes.run(module);
@@ -94,7 +101,8 @@ auto EmitObject(const SemIR::Program &program, std::string_view objectPath,
   if (output.has_error()) {
     const auto message = output.error().message();
     output.clear_error();
-    diagnostics.error("object output", std::string(objectPath) + ": " + message);
+    diagnostics.error("object output",
+                      std::string(objectPath) + ": " + message);
     return false;
   }
   return true;

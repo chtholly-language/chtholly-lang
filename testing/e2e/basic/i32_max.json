@@ -1,0 +1,4 @@
+{
+  "schema_version": 1, "name": "e2e.basic.i32_max", "kind": "compile", "source": "i32_max.cns",
+  "basis": "2^31-1 is legal; large process status deliberately not executed", "compile": { "exit_code": 0 }
+}

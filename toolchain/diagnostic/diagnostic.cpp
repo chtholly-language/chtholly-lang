@@ -15,12 +15,13 @@ auto Diagnostics::error(std::string stage, std::string message) -> void {
   Records.push_back({std::nullopt, std::move(stage), std::move(message)});
 }
 
-auto Diagnostics::render(std::ostream &output, const Source::Buffer *source) const
-    -> void {
+auto Diagnostics::render(std::ostream &output,
+                         const Source::Buffer *source) const -> void {
   for (const auto &record : Records) {
     if (record.Offset && source) {
       const auto location = source->locate(*record.Offset);
-      output << source->name() << ':' << location.Line << ':' << location.Column;
+      output << source->name() << ':' << location.Line << ':'
+             << location.Column;
     } else {
       output << "chthollyc";
       if (!record.Stage.empty()) {

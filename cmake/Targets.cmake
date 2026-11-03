@@ -3,12 +3,31 @@ function(chtholly_configure_target target)
   target_compile_features(${target} PUBLIC cxx_std_20)
   set_target_properties(${target} PROPERTIES
     CXX_EXTENSIONS OFF
-    MSVC_RUNTIME_LIBRARY MultiThreadedDLL
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/bin")
-  # Public STL types must use the same ABI as the pinned LLVM development kit.
-  target_compile_definitions(${target} PUBLIC _ITERATOR_DEBUG_LEVEL=0)
-  target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-  target_compile_options(${target} PRIVATE /W4 /permissive- /EHsc /utf-8)
+  if(MSVC)
+    set_target_properties(${target} PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+    target_compile_definitions(${target} PUBLIC _ITERATOR_DEBUG_LEVEL=0)
+    target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_compile_options(${target} PRIVATE /W4 /permissive- /EHsc /utf-8)
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+  if(CHTHOLLY_SANITIZER STREQUAL "address")
+    target_compile_options(${target} PRIVATE /fsanitize=address /Zi)
+    target_compile_definitions(${target} PUBLIC _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION)
+    target_link_options(${target} PRIVATE /INCREMENTAL:NO)
+    get_target_property(kind ${target} TYPE)
+    if(kind STREQUAL "EXECUTABLE")
+      get_filename_component(msvc_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+      find_file(CHTHOLLY_ASAN_DLL clang_rt.asan_dynamic-x86_64.dll
+        PATHS "${msvc_bin}" NO_DEFAULT_PATH REQUIRED)
+      add_custom_command(TARGET ${target} POST_BUILD COMMAND ${CMAKE_COMMAND} -E
+        copy_if_different "${CHTHOLLY_ASAN_DLL}" "$<TARGET_FILE_DIR:${target}>" VERBATIM)
+    endif()
+  elseif(CHTHOLLY_SANITIZER STREQUAL "undefined")
+    target_compile_options(${target} PRIVATE -fsanitize=undefined -fno-sanitize-recover=undefined)
+    target_link_options(${target} PRIVATE -fsanitize=undefined -fno-sanitize-recover=undefined)
+  endif()
 endfunction()
 
 function(chtholly_use_llvm target)

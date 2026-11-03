@@ -2,8 +2,12 @@
 #pragma once
 #include <string_view>
 
-namespace Chtholly::SemIR { class Program; }
-namespace Chtholly::Diagnostic { class Diagnostics; }
+namespace Chtholly::SemIR {
+class Program;
+}
+namespace Chtholly::Diagnostic {
+class Diagnostics;
+}
 
 namespace Chtholly::CodeGen {
 

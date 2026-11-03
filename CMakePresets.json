@@ -1,0 +1,66 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "LLVM_DIR": "$env{CHTHOLLY_LLVM_DIR}",
+        "CHTHOLLY_GTEST_SOURCE_DIR": "$env{CHTHOLLY_GTEST_SOURCE_DIR}",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "bootstrap-debug",
+      "inherits": "windows-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "BUILD_TESTING": "OFF" }
+    },
+    {
+      "name": "bootstrap-release",
+      "inherits": "windows-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "OFF" }
+    },
+    { "name": "dev-debug", "inherits": "windows-base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "BUILD_TESTING": "ON" } },
+    { "name": "ci-windows-debug", "inherits": "dev-debug" },
+    { "name": "ci-windows-release", "inherits": "dev-debug", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" } },
+    { "name": "ci-windows-asan", "inherits": "dev-debug", "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "CHTHOLLY_SANITIZER": "address" } },
+    { "name": "product-only", "inherits": "bootstrap-release" },
+    {
+      "name": "ci-analysis", "inherits": "dev-debug",
+      "toolchainFile": "${sourceDir}/cmake/WindowsAnalysis.cmake",
+      "cacheVariables": { "CMAKE_C_COMPILER": "clang-cl", "CMAKE_CXX_COMPILER": "clang-cl", "CHTHOLLY_STATIC_ANALYSIS": "ON" }
+    },
+    {
+      "name": "ci-linux-frontend-ubsan", "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo", "CMAKE_C_COMPILER": "clang-18", "CMAKE_CXX_COMPILER": "clang++-18",
+        "CHTHOLLY_FRONTEND_ONLY": "ON", "CHTHOLLY_SANITIZER": "undefined", "BUILD_TESTING": "ON",
+        "CHTHOLLY_GTEST_SOURCE_DIR": "$env{CHTHOLLY_GTEST_SOURCE_DIR}", "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "bootstrap-debug", "configurePreset": "bootstrap-debug" },
+    { "name": "bootstrap-release", "configurePreset": "bootstrap-release" },
+    { "name": "dev-debug", "configurePreset": "dev-debug" },
+    { "name": "ci-windows-debug", "configurePreset": "ci-windows-debug" },
+    { "name": "ci-windows-release", "configurePreset": "ci-windows-release" },
+    { "name": "ci-windows-asan", "configurePreset": "ci-windows-asan" },
+    { "name": "ci-linux-frontend-ubsan", "configurePreset": "ci-linux-frontend-ubsan" },
+    { "name": "ci-analysis", "configurePreset": "ci-analysis" },
+    { "name": "product-only", "configurePreset": "product-only" }
+  ],
+  "testPresets": [
+    { "name": "dev-debug", "configurePreset": "dev-debug", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
+    { "name": "ci-windows-debug", "configurePreset": "ci-windows-debug", "inherits": "dev-debug" },
+    { "name": "ci-windows-release", "configurePreset": "ci-windows-release", "inherits": "dev-debug" },
+    { "name": "ci-windows-asan", "configurePreset": "ci-windows-asan", "inherits": "dev-debug" },
+    { "name": "ci-linux-frontend-ubsan", "configurePreset": "ci-linux-frontend-ubsan", "inherits": "dev-debug" }
+  ]
+}

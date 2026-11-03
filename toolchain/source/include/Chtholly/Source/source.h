@@ -24,8 +24,8 @@ struct Location {
 // any initial BOM. Tokens and trees must only be used with their source buffer.
 class Buffer {
 public:
-  static auto Read(const std::filesystem::path &path, std::string &error)
-      -> std::optional<Buffer>;
+  static auto Read(const std::filesystem::path &path,
+                   std::string &error) -> std::optional<Buffer>;
 
   auto name() const -> const std::string & { return Name; }
   auto text() const -> std::string_view { return Text; }

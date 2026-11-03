@@ -15,3 +15,4 @@
 | --- | --- |
 | [架构概览](architecture/overview.md) | 当前模块职责与后续表示演进 |
 | [贡献说明](../CONTRIBUTING.md) | 范围、审查、许可|
+| [测试与工程检查](../testing/README.md) | CTest、运行器、依赖和人工命令 |

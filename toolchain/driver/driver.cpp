@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 #include <Chtholly/Driver/driver.h>
+
 #include <Chtholly/Check/check.h>
 #include <Chtholly/CodeGen/codegen.h>
 #include <Chtholly/Diagnostic/diagnostic.h>
@@ -56,7 +57,8 @@ struct Options {
   std::string Output;
 };
 
-auto ParseOptions(std::span<const std::string> arguments) -> std::optional<Options> {
+auto ParseOptions(std::span<const std::string> arguments)
+    -> std::optional<Options> {
   Options options;
   bool positionalOnly = false;
   for (std::size_t i = 0; i < arguments.size(); ++i) {
@@ -69,7 +71,8 @@ auto ParseOptions(std::span<const std::string> arguments) -> std::optional<Optio
         return std::nullopt;
       }
       options.Output = arguments[++i];
-    } else if (argument.empty() || (!positionalOnly && argument.starts_with('-')) ||
+    } else if (argument.empty() ||
+               (!positionalOnly && argument.starts_with('-')) ||
                !options.Input.empty()) {
       return std::nullopt;
     } else {
@@ -83,7 +86,8 @@ auto ParseOptions(std::span<const std::string> arguments) -> std::optional<Optio
 }
 
 // This invocation owns a unique directory beside the output, on the same
-// volume. Cleanup only removes its known files, never a caller's directory tree.
+// volume. Cleanup only removes its known files, never a caller's directory
+// tree.
 class TemporaryFiles {
 public:
   TemporaryFiles() = default;
@@ -94,16 +98,19 @@ public:
       return;
     }
     std::error_code ignored;
-    for (const auto *name : {"main.obj", "linked.exe", "stdout.txt", "stderr.txt"}) {
+    for (const auto *name :
+         {"main.obj", "linked.exe", "stdout.txt", "stderr.txt"}) {
       FS::remove(Directory / name, ignored);
     }
     FS::remove(Directory, ignored);
   }
 
-  auto create(const FS::path &parent, Diagnostic::Diagnostics &diagnostics) -> bool {
+  auto create(const FS::path &parent,
+              Diagnostic::Diagnostics &diagnostics) -> bool {
     llvm::SmallString<256> directory;
     const auto prefix = UTF8Path(parent / ".chtholly");
-    if (const auto error = llvm::sys::fs::createUniqueDirectory(prefix, directory)) {
+    if (const auto error =
+            llvm::sys::fs::createUniqueDirectory(prefix, directory)) {
       diagnostics.error("temporary output", prefix + ": " + error.message());
       return false;
     }
@@ -122,12 +129,14 @@ auto ReadLog(const FS::path &path) -> std::string {
   if (!input) {
     return "[cannot read tool log: " + UTF8Path(path) + "]\n";
   }
-  return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+  return {std::istreambuf_iterator<char>(input),
+          std::istreambuf_iterator<char>()};
 }
 
 auto Execute(const FS::path &tool, const std::vector<std::string> &storage,
              const TemporaryFiles &temporary, std::string_view stage,
-             Diagnostic::Diagnostics &diagnostics) -> std::optional<std::string> {
+             Diagnostic::Diagnostics &diagnostics)
+    -> std::optional<std::string> {
   const auto program = UTF8Path(tool);
   std::vector<llvm::StringRef> arguments;
   arguments.reserve(storage.size());
@@ -137,15 +146,19 @@ auto Execute(const FS::path &tool, const std::vector<std::string> &storage,
   const auto stdoutPath = UTF8Path(temporary.file("stdout.txt"));
   const auto stderrPath = UTF8Path(temporary.file("stderr.txt"));
   const std::array<std::optional<llvm::StringRef>, 3> redirects = {
-      llvm::StringRef(""), llvm::StringRef(stdoutPath), llvm::StringRef(stderrPath)};
+      llvm::StringRef(""), llvm::StringRef(stdoutPath),
+      llvm::StringRef(stderrPath)};
   std::string error;
   bool failed = false;
   const int status = llvm::sys::ExecuteAndWait(
       program, arguments, std::nullopt, redirects, 120, 0, &error, &failed);
-  auto log = ReadLog(temporary.file("stdout.txt")) + ReadLog(temporary.file("stderr.txt"));
+  auto log = ReadLog(temporary.file("stdout.txt")) +
+             ReadLog(temporary.file("stderr.txt"));
   if (failed || status != 0) {
-    diagnostics.error(std::string(stage), "tool '" + program + "' returned " +
-        std::to_string(status) + (error.empty() ? "" : ": " + error) + "\n" + log);
+    diagnostics.error(std::string(stage),
+                      "tool '" + program + "' returned " +
+                          std::to_string(status) +
+                          (error.empty() ? "" : ": " + error) + "\n" + log);
     return std::nullopt;
   }
   return log;
@@ -160,7 +173,8 @@ auto VersionMatches(std::string_view output, std::string_view marker) -> bool {
   constexpr std::string_view Expected = BuildConfig::LLVMVersion;
   return version.starts_with(Expected) &&
          (version.size() == Expected.size() ||
-          std::string_view(" \t\r\n").find(version[Expected.size()]) != std::string_view::npos);
+          std::string_view(" \t\r\n").find(version[Expected.size()]) !=
+              std::string_view::npos);
 }
 
 struct Tools {
@@ -168,8 +182,8 @@ struct Tools {
   FS::path Linker;
 };
 
-auto FindTools(const TemporaryFiles &temporary, Diagnostic::Diagnostics &diagnostics)
-    -> std::optional<Tools> {
+auto FindTools(const TemporaryFiles &temporary,
+               Diagnostic::Diagnostics &diagnostics) -> std::optional<Tools> {
   // The wide environment API avoids interpreting a Unicode path in the ANSI
   // code page. An explicitly empty or invalid override must not fall back.
   const auto *overrideDirectory = _wgetenv(L"CHTHOLLY_LLVM_BIN");
@@ -182,27 +196,29 @@ auto FindTools(const TemporaryFiles &temporary, Diagnostic::Diagnostics &diagnos
   std::error_code error;
   directory = FS::absolute(directory, error);
   if (error) {
-    diagnostics.error("toolchain", "cannot resolve LLVM tool directory: " + error.message());
+    diagnostics.error("toolchain",
+                      "cannot resolve LLVM tool directory: " + error.message());
     return std::nullopt;
   }
   Tools tools{directory / "clang-cl.exe", directory / "lld-link.exe"};
   for (const auto &tool : {tools.Clang, tools.Linker}) {
     if (!FS::is_regular_file(tool, error)) {
       diagnostics.error("toolchain", "missing tool '" + UTF8Path(tool) + "'" +
-          (error ? ": " + error.message() : ""));
+                                         (error ? ": " + error.message() : ""));
       return std::nullopt;
     }
   }
   for (const auto &tool : {tools.Clang, tools.Linker}) {
     const auto log = Execute(tool, {UTF8Path(tool), "--version"}, temporary,
-                              "tool version", diagnostics);
+                             "tool version", diagnostics);
     if (!log) {
       return std::nullopt;
     }
     const auto marker = tool == tools.Clang ? "clang version " : "LLD ";
     if (!VersionMatches(*log, marker)) {
-      diagnostics.error("toolchain", "tool '" + UTF8Path(tool) +
-          "' must match LLVM " + BuildConfig::LLVMVersion + "\n" + *log);
+      diagnostics.error("toolchain",
+                        "tool '" + UTF8Path(tool) + "' must match LLVM " +
+                            BuildConfig::LLVMVersion + "\n" + *log);
       return std::nullopt;
     }
   }
@@ -213,8 +229,10 @@ auto CheckDestination(const FS::path &input, const FS::path &output,
                       Diagnostic::Diagnostics &diagnostics) -> bool {
   std::error_code error;
   if (!FS::is_directory(output.parent_path(), error)) {
-    diagnostics.error("output", "output parent must be an existing directory: '" +
-        UTF8Path(output.parent_path()) + "'" + (error ? ": " + error.message() : ""));
+    diagnostics.error("output",
+                      "output parent must be an existing directory: '" +
+                          UTF8Path(output.parent_path()) + "'" +
+                          (error ? ": " + error.message() : ""));
     return false;
   }
   const auto status = FS::symlink_status(output, error);
@@ -226,14 +244,17 @@ auto CheckDestination(const FS::path &input, const FS::path &output,
     return true;
   }
   if (!FS::is_regular_file(status)) {
-    diagnostics.error("output", "destination must be a regular file, not a directory or symbolic link: '" +
-                                  UTF8Path(output) + "'");
+    diagnostics.error("output",
+                      "destination must be a regular file, not a directory or "
+                      "symbolic link: '" +
+                          UTF8Path(output) + "'");
     return false;
   }
   const bool same = FS::equivalent(input, output, error);
   if (error || same) {
     diagnostics.error("output", same ? "input and output refer to the same file"
-                                    : "cannot compare input and output: " + error.message());
+                                     : "cannot compare input and output: " +
+                                           error.message());
     return false;
   }
   return true;
@@ -249,13 +270,15 @@ auto Compile(const Options &options) -> int {
   std::error_code error;
   const auto input = FS::absolute(NativePath(options.Input), error);
   if (error) {
-    diagnostics.error("input", "cannot resolve '" + options.Input + "': " + error.message());
+    diagnostics.error("input", "cannot resolve '" + options.Input +
+                                   "': " + error.message());
     return failure();
   }
   std::string readError;
   source = Source::Buffer::Read(input, readError);
   if (!source) {
-    diagnostics.error("input", "cannot read '" + options.Input + "': " + readError);
+    diagnostics.error("input",
+                      "cannot read '" + options.Input + "': " + readError);
     return failure();
   }
   const auto tokens = Lex::Lex(*source, diagnostics);
@@ -272,7 +295,8 @@ auto Compile(const Options &options) -> int {
   }
   const auto output = FS::absolute(NativePath(options.Output), error);
   if (error) {
-    diagnostics.error("output", "cannot resolve '" + options.Output + "': " + error.message());
+    diagnostics.error("output", "cannot resolve '" + options.Output +
+                                    "': " + error.message());
     return failure();
   }
   if (!CheckDestination(input, output, diagnostics)) {
@@ -294,16 +318,26 @@ auto Compile(const Options &options) -> int {
   // LLVM 18's MSVC toolchain does not consume the generic --ld-path option.
   // Forward -B through clang-cl to prioritize this exact, prechecked directory.
   const std::vector<std::string> arguments = {
-      UTF8Path(tools->Clang), "/nologo", "--target=" + std::string(BuildConfig::Target),
-      "-fuse-ld=lld", "/clang:-B" + UTF8Path(tools->Linker.parent_path()), object,
-      "/Fe" + UTF8Path(executable), "/link", "/subsystem:console", "/machine:x64",
-      "/incremental:no", "/defaultlib:msvcrt", "/defaultlib:oldnames"};
+      UTF8Path(tools->Clang),
+      "/nologo",
+      "--target=" + std::string(BuildConfig::Target),
+      "-fuse-ld=lld",
+      "/clang:-B" + UTF8Path(tools->Linker.parent_path()),
+      object,
+      "/Fe" + UTF8Path(executable),
+      "/link",
+      "/subsystem:console",
+      "/machine:x64",
+      "/incremental:no",
+      "/defaultlib:msvcrt",
+      "/defaultlib:oldnames",
+  };
   if (!Execute(tools->Clang, arguments, temporary, "link", diagnostics)) {
     return failure();
   }
   if (!FS::is_regular_file(executable, error)) {
     diagnostics.error("link", "linker reported success without producing '" +
-                               UTF8Path(executable) + "'");
+                                  UTF8Path(executable) + "'");
     return failure();
   }
   // Recheck before publication. The final path has not been modified by this
@@ -311,10 +345,11 @@ auto Compile(const Options &options) -> int {
   if (!CheckDestination(input, output, diagnostics)) {
     return failure();
   }
-  if (!MoveFileExW(executable.c_str(), output.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+  if (!MoveFileExW(executable.c_str(), output.c_str(),
+                   MOVEFILE_REPLACE_EXISTING)) {
     const auto code = static_cast<int>(GetLastError());
     diagnostics.error("publish", "cannot replace '" + UTF8Path(output) + "': " +
-                                  std::system_category().message(code));
+                                     std::system_category().message(code));
     return failure();
   }
   return 0;
@@ -328,14 +363,17 @@ auto Run(std::span<const std::string> arguments) -> int {
     return 0;
   }
   if (arguments.size() == 1 && arguments.front() == "--version") {
-    std::cout << "Chtholly " << BuildConfig::Version << "\nLLVM " << BuildConfig::LLVMVersion
-              << "\nTarget " << BuildConfig::Target << '\n';
+    std::cout << "Chtholly " << BuildConfig::Version << "\nLLVM "
+              << BuildConfig::LLVMVersion << "\nTarget " << BuildConfig::Target
+              << '\n';
     return 0;
   }
   const auto options = ParseOptions(arguments);
   if (!options) {
-    std::cerr << "chthollyc: command line: error: expected one input and one -o output; unknown or duplicate option\n"
-              << Usage;
+    std::cerr
+        << "chthollyc: command line: error: expected one input and one -o "
+           "output; unknown or duplicate option\n"
+        << Usage;
     return 2;
   }
   return Compile(*options);

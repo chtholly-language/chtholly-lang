@@ -5,8 +5,17 @@
 namespace Chtholly::Lex {
 
 enum class TokenKind {
-  Fn, Return, Identifier, DecimalInteger, LeftParen, RightParen, Arrow,
-  LeftBrace, RightBrace, Semicolon, EndOfFile
+  Fn,
+  Return,
+  Identifier,
+  DecimalInteger,
+  LeftParen,
+  RightParen,
+  Arrow,
+  LeftBrace,
+  RightBrace,
+  Semicolon,
+  EndOfFile
 };
 
 struct Token {

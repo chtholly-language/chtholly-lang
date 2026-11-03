@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "googletest": {
+    "version": "1.15.2", "repository": "https://github.com/google/googletest.git",
+    "commit": "b514bdc898e2951020cbdca1304b75f5950d1f59", "license": "BSD-3-Clause",
+    "purpose": "BUILD_TESTING only; local C++ assertions"
+  },
+  "llvm_windows": {
+    "version": "18.1.8",
+    "url": "https://github.com/Yhlight/llvm-package/releases/download/v18.1.8/llvm-18.1.8-host-windows-x86_64-targets-x86_64-aarch64-relwithdebinfo.tar.xz",
+    "sha256": "9594abdeb7b24a568955c775ff3e806a9c7fc41b06766579555743f595324098",
+    "license": "Apache-2.0 WITH LLVM-exception; bundled third-party notices apply",
+    "purpose": "Windows SDK, clang-cl, lld-link, format and tidy",
+    "abi": "MSVC x64 /MD, iterator debug level 0; assertions, RTTI, EH and ABI-breaking checks enabled"
+  },
+  "python": { "version": "3.11.9", "local_series": "3.11", "source": "https://github.com/actions/python-versions", "license": "Python-2.0", "purpose": "tests and developer scripts only" },
+  "cmake": { "version": "3.31.12", "minimum": "3.25", "source": "https://github.com/Kitware/CMake/releases/tag/v3.31.12", "license": "BSD-3-Clause", "purpose": "build and CTest", "windows_sha256": "0c4baa40f28b3f8225eb3fdf6946c987b4fe901403b4eaf2fbbd9378100aaa0c", "linux_sha256": "0dc2e9a6860f06bf10bd8fadc03e35d9eeb4df46e33763a7e480e987758f385c" },
+  "ninja": { "version": "1.13.2", "source": "https://github.com/ninja-build/ninja/releases/tag/v1.13.2", "license": "Apache-2.0", "purpose": "build executor", "windows_sha256": "07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65", "linux_sha256": "5749cbc4e668273514150a80e387a957f933c6ed3f5f11e03fb30955e2bbead6" },
+  "linux_clang": { "version": "1:18.1.3-1ubuntu1", "packages": ["clang-18", "libclang-rt-18-dev"], "source": "Ubuntu 24.04 noble-updates official archive", "license": "Apache-2.0 WITH LLVM-exception", "purpose": "frontend UBSan only" }
+}

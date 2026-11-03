@@ -17,8 +17,8 @@ class Diagnostics {
 public:
   auto sourceError(std::size_t offset, std::string message) -> void;
   auto error(std::string stage, std::string message) -> void;
-  auto render(std::ostream &output, const Source::Buffer *source = nullptr) const
-      -> void;
+  auto render(std::ostream &output,
+              const Source::Buffer *source = nullptr) const -> void;
 
 private:
   struct Record {

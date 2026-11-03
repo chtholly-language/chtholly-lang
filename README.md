@@ -18,9 +18,9 @@ Chtholly 有两个长期目标
 
 ## 当前进展
 
-Chtholly 是一个实验性的编译器实现，当前处于非常早期的 **Bootstrap（B0）**阶段：
+Chtholly 是一个实验性的编译器实现，当前处于非常早期的 **Testing-And-Governance（R1）**阶段：
 
-当前支持的最小程序为：
+当前支持的程序为：
 
 ```cns
 fn main() -> i32 {
@@ -28,7 +28,7 @@ fn main() -> i32 {
 }
 ```
 
-源文件使用 `.cns`。编译器能够将单个无参、返回非负十进制 `i32` 常量的 `main` 编译、链接为 Windows x64 可执行文件。
+源文件使用 `.cns`。
 
 ## 开始使用
 
@@ -53,6 +53,8 @@ chthollyc examples/hello/main.cns -o out/manual/hello.exe
 | 编译器结构与模块边界 | [架构概览](docs/architecture/overview.md) |
 | 开发计划、审查和文档规范 | [文档索引](docs/README.md) |
 | 如何贡献 | [贡献说明](CONTRIBUTING.md) |
+| 路线文档 | [路线文档](docs/roadmap/roadmap.md) |
+| 测试说明 | [测试说明](testing/README.md) |
 
 ## 许可证
 

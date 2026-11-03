@@ -1,0 +1,5 @@
+{
+  "schema_version": 1, "name": "regression.syntax.parameters", "kind": "compile_fail",
+  "source": "parameters.cns", "basis": "Bootstrap has no parameters; nearest positive: e2e.exit_codes.return_0",
+  "compile": { "exit_code": 1, "stderr": { "contains": ["parameters.cns:1:9: error:", "does not support parameters"] } }
+}

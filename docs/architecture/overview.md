@@ -13,8 +13,8 @@ Driver 组织整个流程、工具调用和产物发布；Diagnostic 提供错�
 
 | 模块 | 当前职责 |
 | --- | --- |
-| Source | 读取源码、UTF-8 验证、源范围和定位 |
-| Lex | Bootstrap token、空白与行注释 |
+| Source | 读取原始源码字节、源范围和定位 |
+| Lex | 完整UTF-8验证、Bootstrap token、空白与行注释 |
 | Parse | 最小函数结构及源码范围 |
 | Check | main 签名、返回字面量及范围检查 |
 | SemIR | 仅承载已检查的 i32 返回常量 |

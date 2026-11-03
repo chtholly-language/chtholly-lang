@@ -1,0 +1,5 @@
+{
+  "schema_version": 1, "name": "regression.semantic.return_type", "kind": "compile_fail",
+  "source": "type.cns", "basis": "Bootstrap main returns i32; nearest positive: e2e.exit_codes.return_0",
+  "compile": { "exit_code": 1, "stderr": { "contains": ["type.cns:1:14: error:", "main must return i32"] } }
+}
