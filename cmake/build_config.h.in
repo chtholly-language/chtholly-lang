@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+#pragma once
+
+namespace Chtholly::BuildConfig {
+inline constexpr char Version[] = "bootstrap-b0";
+inline constexpr char LLVMVersion[] = "18.1.8";
+inline constexpr char Target[] = "x86_64-pc-windows-msvc";
+inline constexpr char LLVMTools[] = "@CHTHOLLY_CONFIGURED_LLVM_BIN@";
+} // namespace Chtholly::BuildConfig

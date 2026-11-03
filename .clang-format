@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Tool baseline: clang-format 18.1.8.
+BasedOnStyle: LLVM
