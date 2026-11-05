@@ -1,4 +1,4 @@
 {
-  "schema_version": 1, "name": "e2e.exit_codes.return_0", "kind": "run", "source": "return_0.cns",
+  "schema_version": 2, "name": "e2e.exit_codes.return_0", "kind": "run", "source": "return_0.cns",
   "basis": "Bootstrap main result is the native process status", "compile": { "exit_code": 0 }, "run": { "exit_code": 0 }
 }

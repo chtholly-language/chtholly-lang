@@ -1,0 +1,6 @@
+{
+  "schema_version": 2, "name": "e2e.core.panic", "kind": "run_fail",
+  "source": "panic.cns", "basis": "B2-A31: the canonical panic operation reports its call position",
+  "compile": { "exit_code": 0 }, "run": { "exit_code": 120,
+    "failure": { "category": "Panic", "file": "panic.cns", "line": 2, "column": 5 } }
+}

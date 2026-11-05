@@ -1,0 +1,13 @@
+fn narrow(input: i32, stop: bool) -> u8 {
+    let value = input as u8 else {
+        if (stop) { return 1u8; }
+        42
+    };
+    return value;
+}
+fn main() -> i32 {
+    let value = narrow(300, false);
+    let fallback = 300 as u8 else { 0 };
+    assert(fallback == 0u8);
+    return value as i32;
+}

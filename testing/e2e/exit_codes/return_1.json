@@ -1,4 +1,4 @@
 {
-  "schema_version": 1, "name": "e2e.exit_codes.return_1", "kind": "run", "source": "return_1.cns",
+  "schema_version": 2, "name": "e2e.exit_codes.return_1", "kind": "run", "source": "return_1.cns",
   "basis": "Nonzero program return is independent of compiler success", "compile": { "exit_code": 0 }, "run": { "exit_code": 1 }
 }

@@ -31,6 +31,13 @@ message(STATUS "LLVM assertions / RTTI / EH: ${LLVM_ENABLE_ASSERTIONS} / ${LLVM_
 separate_arguments(CHTHOLLY_LLVM_DEFINITIONS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
 
 # CMake-normalized paths use forward slashes; escape before embedding in C++.
+set(runtime_identity "")
+foreach(component IN ITEMS runtime/runtime.cpp runtime/include/Chtholly/Runtime/abi.h target/include/Chtholly/Target/target.h)
+  file(SHA256 "${PROJECT_SOURCE_DIR}/toolchain/${component}" component_hash)
+  string(APPEND runtime_identity "${component_hash}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/toolchain/${component}")
+endforeach()
+string(SHA256 CHTHOLLY_RUNTIME_IMPLEMENTATION "${runtime_identity}")
 file(TO_CMAKE_PATH "${CHTHOLLY_LLVM_BIN}" CHTHOLLY_CONFIGURED_LLVM_BIN)
 string(REPLACE "\\" "\\\\" CHTHOLLY_CONFIGURED_LLVM_BIN "${CHTHOLLY_CONFIGURED_LLVM_BIN}")
 string(REPLACE "\"" "\\\"" CHTHOLLY_CONFIGURED_LLVM_BIN "${CHTHOLLY_CONFIGURED_LLVM_BIN}")

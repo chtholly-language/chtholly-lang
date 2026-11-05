@@ -25,7 +25,7 @@ class RunnerTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.manifest = self.root / "case.json"
         (self.root / "input.cns").write_bytes(b"// UTF-8 \xc3\xa9\r\nfn main() -> i32 { return 42; }")
-        self.data = {"schema_version": 1, "name": "e2e.runner.contract", "kind": "run",
+        self.data = {"schema_version": 2, "name": "e2e.runner.contract", "kind": "run",
                      "source": "input.cns", "basis": "independent fixture contract",
                      "compile": {"exit_code": 0}, "run": {"exit_code": 42}}
 
@@ -39,6 +39,34 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.execute(), 0)
         self.data["run"]["exit_code"] = 0
         self.assertEqual(self.execute(), 1)
+
+    def test_language_failures_require_category_location_and_status(self):
+        self.data["kind"] = "run_fail"
+        self.data["run"] = {"exit_code": 120, "failure": {
+            "category": "Arithmetic.DivisionByZero", "file": "input.cns", "line": 2, "column": 3}}
+        self.assertEqual(self.execute("run-language-error"), 0)
+        for mode in ("success", "run-wrong-category", "run-crash", "run-timeout", "run-sanitizer", "run-abort"):
+            with self.subTest(mode=mode):
+                self.data["run"]["timeout_seconds"] = 0.2
+                self.assertEqual(self.execute(mode), 1)
+        self.data["run"]["failure"]["column"] = 4
+        self.assertEqual(self.execute("run-language-error"), 1)
+
+    def test_abort_is_a_distinct_contract(self):
+        self.data["kind"] = "run_abort"
+        self.data["run"] = {"exit_code": 121}
+        self.assertEqual(self.execute("run-abort"), 0)
+        self.assertEqual(self.execute("run-crash"), 1)
+        self.assertEqual(self.execute("run-language-error"), 1)
+
+    def test_schema_two_rejects_legacy_and_invalid_failure_combinations(self):
+        with self.assertRaises(ConfigurationError):
+            validate(dict(self.data, schema_version=1))
+        for category in ("Unknown", [], True):
+            bad = dict(self.data, kind="run_fail", run={"exit_code": 120, "failure": {
+                "category": category, "file": "input.cns", "line": 1, "column": 1}})
+            with self.subTest(category=category), self.assertRaises(ConfigurationError):
+                validate(bad)
 
     def test_missing_output_and_no_old_executable(self):
         self.assertEqual(self.execute(), 0)

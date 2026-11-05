@@ -1,0 +1,11 @@
+fn cast(value: f64) -> i32 {
+    return value as i32;
+}
+fn main() -> i32 {
+    let constant = (-0.0f64) as i32;
+    let recovered = (-0.0f64) as i32 else { 42 };
+    assert(constant == 0);
+    assert(recovered == 0);
+    assert(cast(-0.0f64) == 0);
+    return 0;
+}

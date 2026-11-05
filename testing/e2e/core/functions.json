@@ -1,0 +1,5 @@
+{
+  "schema_version": 2, "name": "e2e.core.functions", "kind": "run",
+  "source": "functions.cns", "basis": "B2-A04/A18/A20: direct calls, labels, local writes and branches",
+  "compile": { "exit_code": 0 }, "run": { "exit_code": 42 }
+}

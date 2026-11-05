@@ -1,4 +1,4 @@
 {
-  "schema_version": 1, "name": "e2e.basic.leading_zero", "kind": "run", "source": "leading_zero.cns",
+  "schema_version": 2, "name": "e2e.basic.leading_zero", "kind": "run", "source": "leading_zero.cns",
   "basis": "Leading zeroes do not change decimal radix", "compile": { "exit_code": 0 }, "run": { "exit_code": 42 }
 }

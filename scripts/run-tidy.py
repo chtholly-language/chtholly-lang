@@ -18,21 +18,27 @@ def main():
         version = subprocess.run([str(args.tool), "--version"], capture_output=True, text=True, check=True)
         if not re.search(r"\bversion 18\.1\.8(?:\s|$)", version.stdout):
             raise ValueError("clang-tidy 18.1.8 is required")
-        database = json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
+        database_paths = [build / "compile_commands.json", build / "target-runtime/compile_commands.json"]
         entries = {}
-        for entry in database:
-            source = Path(entry["file"])
-            if not source.is_absolute():
-                source = Path(entry["directory"]) / source
-            source = source.resolve()
-            if source.is_relative_to(root / "toolchain") or source.is_relative_to(root / "testing"):
-                entries[source] = entry
+        for database_path in database_paths:
+            database = json.loads(database_path.read_text(encoding="utf-8"))
+            if not isinstance(database, list) or not database:
+                raise ValueError("empty or invalid compilation database: " + str(database_path))
+            for entry in database:
+                source = Path(entry["file"])
+                if not source.is_absolute():
+                    source = Path(entry["directory"]) / source
+                source = source.resolve()
+                if source.is_relative_to(root / "toolchain") or source.is_relative_to(root / "testing"):
+                    if source in entries:
+                        raise ValueError("duplicate project translation unit: " + str(source))
+                    entries[source] = database_path.parent
         expected = {path.resolve() for base in (root / "toolchain", root / "testing") for path in base.rglob("*.cpp")}
         if set(entries) != expected:
             raise ValueError(f"translation unit mismatch: missing={expected - set(entries)}, extra={set(entries) - expected}")
         failed = False
         for source in sorted(entries):
-            result = subprocess.run([str(args.tool), "-p", str(build), "--warnings-as-errors=*", str(source)],
+            result = subprocess.run([str(args.tool), "-p", str(entries[source]), "--warnings-as-errors=*", str(source)],
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             sys.stdout.buffer.write(result.stdout)
             # Parser errors cannot be interpreted as an empty warning set.

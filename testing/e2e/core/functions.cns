@@ -1,0 +1,10 @@
+fn add(left: i32, right: i32) -> i32 {
+    return left + right;
+}
+fn main() -> i32 {
+    let original = 40;
+    var value = add(right: 2, left: original);
+    value = { value = value + 1; value - 1 };
+    if (value != 42) { return 1; }
+    return value;
+}

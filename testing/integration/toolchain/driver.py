@@ -50,6 +50,34 @@ def main():
         if observed.failure or observed.returncode != 42:
             raise AssertionError("real toolchain positive control failed")
         before = digest(output)
+        original_compiler = compiler
+        package = root / "isolated compiler"
+        package.mkdir()
+        isolated_compiler = package / "chthollyc.exe"
+        shutil.copyfile(compiler, isolated_compiler)
+        for dll in Path(compiler).parent.glob("clang_rt.asan_dynamic*.dll"):
+            shutil.copyfile(dll, package / dll.name)
+        try:
+            compiler = str(isolated_compiler)
+            invoke([source, "-o", output], 1, "missing or incomplete runtime metadata")
+            shutil.copytree(Path(original_compiler).parent / "lib", package / "lib")
+            metadata = package / "lib/chtholly-runtime.meta"
+            original_metadata = metadata.read_text(encoding="utf-8")
+            metadata.write_text(original_metadata.replace("abi=2", "abi=999"), encoding="utf-8")
+            invoke([source, "-o", output], 1, "runtime identity")
+            metadata.write_text(original_metadata.replace("implementation=", "implementation=wrong"), encoding="utf-8")
+            invoke([source, "-o", output], 1, "runtime identity")
+            metadata.write_text(original_metadata, encoding="utf-8")
+            runtime_archive = package / "lib/chtholly-runtime.lib"
+            with runtime_archive.open("ab") as stream:
+                stream.write(b"tampered")
+            invoke([source, "-o", output], 1, "checksum mismatch")
+            runtime_archive.unlink()
+            invoke([source, "-o", output], 1, "cannot read a nonempty runtime archive")
+            if digest(output) != before:
+                raise AssertionError("runtime failure changed the previous artifact")
+        finally:
+            compiler = original_compiler
         tools = root / "tools with spaces"
         tools.mkdir()
         environment = dict(os.environ, CHTHOLLY_LLVM_BIN=str(tools))
@@ -93,11 +121,11 @@ def main():
         invoke([root / "missing.cns", "-o", output], 1, "cannot read")
         bad_source = root / "bad.cns"
         for content, reason in (
-            (b"", "expected 'fn'"),
-            (b"fn main() -> i32 { return -1; }", "unsupported character"),
-            (b"fn main() -> i32 { return 1 + 1; }", "unsupported character"),
-            (b"fn main() -> i32 { return 1u32; }", "expected ';'"),
-            (b"fn main() -> i32 { return 0x10; }", "expected ';'"),
+            (b"", "requires a unique main"),
+            (b"fn main() -> i32 { return true; }", "expected i32"),
+            (b"fn main() -> i32 { return 2147483647 + 1; }", "Arithmetic.Overflow"),
+            (b"fn main() -> i32 { return 1u32; }", "expected i32"),
+            (b"fn main() -> i32 { return 0x; }", "invalid numeric literal"),
             (b"fn main() -> i32 { return 0; } // \xff", "invalid UTF-8"),
         ):
             bad_source.write_bytes(content)

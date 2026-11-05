@@ -1,18 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 #include <Chtholly/CodeGen/codegen.h>
-#include <Chtholly/Diagnostic/diagnostic.h>
-#include <Chtholly/SemIR/program.h>
-#include <Chtholly/build_config.h>
 
-#include <llvm/ADT/StringRef.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/CallingConv.h>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/LLVMContext.h>
+#include "emission.h"
+#include "emitter.h"
+
+#include <Chtholly/Diagnostic/diagnostic.h>
+
 #include <llvm/IR/LegacyPassManager.h>
-#include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/CodeGen.h>
@@ -20,80 +14,86 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
-#include <llvm/Target/TargetOptions.h>
 
-#include <cstdint>
-#include <memory>
-#include <optional>
-#include <string>
-#include <system_error>
+#include <stdexcept>
 
 namespace Chtholly::CodeGen {
+auto FunctionSymbol(unsigned function) -> std::string {
+  return "__chtholly_fn_" + std::to_string(function);
+}
 
-auto EmitObject(const SemIR::Program &program, std::string_view objectPath,
-                Diagnostic::Diagnostics &diagnostics) -> bool {
+auto EmitObjectFile(const IR::Program &program, std::string_view path,
+                    Diagnostic::Diagnostics &diagnostics,
+                    bool nativeEntry) -> bool {
   static const bool initialized = [] {
     return !llvm::InitializeNativeTarget() &&
            !llvm::InitializeNativeTargetAsmPrinter();
   }();
   if (!initialized) {
-    diagnostics.error("code generation",
-                      "cannot initialize the LLVM X86 target");
+    diagnostics.error("code generation", "cannot initialize X86 target");
     return false;
   }
+  const auto &input = program.storage();
   std::string error;
-  const auto *target =
-      llvm::TargetRegistry::lookupTarget(BuildConfig::Target, error);
+  const auto triple = std::string(input.Target.Triple);
+  const auto *target = llvm::TargetRegistry::lookupTarget(triple, error);
   if (!target) {
     diagnostics.error("code generation", error);
     return false;
   }
   llvm::TargetOptions options;
-  std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      BuildConfig::Target, "generic", "", options, std::nullopt, std::nullopt,
-      llvm::CodeGenOptLevel::None));
+  std::unique_ptr<llvm::TargetMachine> machine(
+      target->createTargetMachine(triple, "generic", "", options, std::nullopt,
+                                  std::nullopt, llvm::CodeGenOptLevel::None));
   if (!machine) {
-    diagnostics.error("code generation",
-                      "cannot create the Windows x64 target machine");
+    diagnostics.error("code generation", "cannot create target machine");
     return false;
   }
-
-  // Declared in dependency order: module and builder die before their context.
   llvm::LLVMContext context;
-  llvm::Module module("chtholly-bootstrap", context);
-  module.setTargetTriple(BuildConfig::Target);
+  llvm::Module module("chtholly-core", context);
+  module.setTargetTriple(triple);
   module.setDataLayout(machine->createDataLayout());
-  auto *type = llvm::FunctionType::get(llvm::Type::getInt32Ty(context), false);
-  auto *main = llvm::Function::Create(type, llvm::GlobalValue::ExternalLinkage,
-                                      "main", module);
-  main->setCallingConv(llvm::CallingConv::C);
-  auto *entry = llvm::BasicBlock::Create(context, "entry", main);
-  llvm::IRBuilder<> builder(entry);
-  builder.CreateRet(llvm::ConstantInt::get(
-      llvm::Type::getInt32Ty(context),
-      static_cast<std::uint64_t>(program.returnValue())));
-
+  const auto &layout = module.getDataLayout();
+  if (layout.getPointerSizeInBits() != input.Target.PointerBits ||
+      layout.isLittleEndian() != input.Target.LittleEndian) {
+    diagnostics.error("target",
+                      "LLVM data layout disagrees with target description");
+    return false;
+  }
+  for (auto type : {Target::Type::I8, Target::Type::I16, Target::Type::I32,
+                    Target::Type::I64, Target::Type::I128}) {
+    auto *integerType =
+        llvm::IntegerType::get(context, input.Target.bits(type));
+    if (layout.getABITypeAlign(integerType).value() !=
+        input.Target.alignment(type)) {
+      diagnostics.error(
+          "target", "LLVM scalar alignment disagrees with target description");
+      return false;
+    }
+  }
+  try {
+    EmitModule(input, module, nativeEntry);
+  } catch (const std::logic_error &error) {
+    diagnostics.error("code generation", error.what());
+    return false;
+  }
   std::string verification;
-  llvm::raw_string_ostream verificationStream(verification);
-  if (llvm::verifyModule(module, &verificationStream)) {
+  llvm::raw_string_ostream stream(verification);
+  if (llvm::verifyModule(module, &stream)) {
     diagnostics.error("LLVM IR verification", verification);
     return false;
   }
-
   std::error_code fileError;
-  llvm::raw_fd_ostream output(
-      llvm::StringRef(objectPath.data(), objectPath.size()), fileError,
-      llvm::sys::fs::OF_None);
+  llvm::raw_fd_ostream output(llvm::StringRef(path.data(), path.size()),
+                              fileError, llvm::sys::fs::OF_None);
   if (fileError) {
-    diagnostics.error("object output",
-                      std::string(objectPath) + ": " + fileError.message());
+    diagnostics.error("object output", fileError.message());
     return false;
   }
   llvm::legacy::PassManager passes;
   if (machine->addPassesToEmitFile(passes, output, nullptr,
                                    llvm::CodeGenFileType::ObjectFile)) {
-    diagnostics.error("code generation",
-                      "LLVM cannot emit a COFF object for the selected target");
+    diagnostics.error("code generation", "COFF emission unavailable");
     return false;
   }
   passes.run(module);
@@ -101,11 +101,13 @@ auto EmitObject(const SemIR::Program &program, std::string_view objectPath,
   if (output.has_error()) {
     const auto message = output.error().message();
     output.clear_error();
-    diagnostics.error("object output",
-                      std::string(objectPath) + ": " + message);
+    diagnostics.error("object output", message);
     return false;
   }
   return true;
 }
-
+auto EmitObject(const IR::Program &program, std::string_view path,
+                Diagnostic::Diagnostics &diagnostics) -> bool {
+  return EmitObjectFile(program, path, diagnostics, true);
+}
 } // namespace Chtholly::CodeGen

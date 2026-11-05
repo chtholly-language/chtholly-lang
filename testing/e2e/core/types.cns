@@ -1,0 +1,26 @@
+fn wide(_ value: i128) -> i128 { return value; }
+fn unsigned_wide(_ value: u128) -> u128 { return value; }
+fn identity(_ value: bool) -> bool { return value; }
+fn unit(_ value: ()) { return; }
+fn impossible(value: !) -> i32 {}
+fn main() -> i32 {
+    let a = -128i8;
+    let b = -32768i16;
+    let c = -2147483648i32;
+    let d = -9223372036854775808i64;
+    let e = wide(-170141183460469231731687303715884105728i128);
+    let f = 255u8;
+    let g = 65535u16;
+    let h = 4294967295u32;
+    let i = 18446744073709551615u64;
+    let j = unsigned_wide(340282366920938463463374607431768211455u128);
+    let k = 42isize;
+    let l = 42usize;
+    let m = 0.1f32;
+    let n = 0.1f64;
+    unit(());
+    assert(identity(true));
+    assert(e < 0i128);
+    assert(j > 0u128);
+    return 42;
+}

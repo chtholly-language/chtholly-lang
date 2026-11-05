@@ -1,0 +1,4 @@
+fn consume(_ first: i32, _ second: i32) -> i32 { return 0; }
+fn main() -> i32 {
+    return consume(abort(), { panic(); });
+}

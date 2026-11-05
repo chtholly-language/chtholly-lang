@@ -16,10 +16,9 @@ class Diagnostics;
 
 namespace Chtholly::Check {
 
-// tree is the successful Parse result for source. No checked program is
-// produced unless the Bootstrap entry and decimal range requirements hold.
+// Success owns semantic records and constants, independently of the AST.
 auto Check(const Source::Buffer &source, const Parse::Tree &tree,
-           Diagnostic::Diagnostics &diagnostics)
-    -> std::optional<SemIR::Program>;
+           Diagnostic::Diagnostics &diagnostics,
+           Numeric::Limits limits = {}) -> std::optional<SemIR::Program>;
 
 } // namespace Chtholly::Check

@@ -1,0 +1,6 @@
+{
+  "schema_version": 2, "name": "e2e.core.negative_zero", "kind": "run",
+  "source": "negative_zero.cns",
+  "basis": "R2 review item 3: constant, runtime and recovered -0 to integer all produce zero",
+  "compile": { "exit_code": 0 }, "run": { "exit_code": 0 }
+}

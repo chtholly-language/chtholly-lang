@@ -1,0 +1,7 @@
+fn main() -> i32 {
+    false && ((1 / 0) == 0);
+    if (false) { let value = 1 / 0; }
+    let value = 0 as u8 else { 1 / 0 };
+    return 42;
+    let ignored = 1 / 0;
+}

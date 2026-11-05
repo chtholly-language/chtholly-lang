@@ -11,6 +11,7 @@
         "CMAKE_C_COMPILER": "cl",
         "CMAKE_CXX_COMPILER": "cl",
         "LLVM_DIR": "$env{CHTHOLLY_LLVM_DIR}",
+        "CHTHOLLY_LLVM_SOURCE_DIR": "$env{CHTHOLLY_LLVM_SOURCE_DIR}",
         "CHTHOLLY_GTEST_SOURCE_DIR": "$env{CHTHOLLY_GTEST_SOURCE_DIR}",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
@@ -41,6 +42,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo", "CMAKE_C_COMPILER": "clang-18", "CMAKE_CXX_COMPILER": "clang++-18",
         "CHTHOLLY_FRONTEND_ONLY": "ON", "CHTHOLLY_SANITIZER": "undefined", "BUILD_TESTING": "ON",
+        "LLVM_DIR": "$env{CHTHOLLY_LLVM_DIR}",
+        "CHTHOLLY_LLVM_SOURCE_DIR": "$env{CHTHOLLY_LLVM_SOURCE_DIR}",
         "CHTHOLLY_GTEST_SOURCE_DIR": "$env{CHTHOLLY_GTEST_SOURCE_DIR}", "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     }

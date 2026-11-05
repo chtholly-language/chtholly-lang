@@ -1,0 +1,5 @@
+{
+  "schema_version": 2, "name": "e2e.core.recovery", "kind": "run",
+  "source": "recovery.cns", "basis": "B2-A16/A17/A35: value-producing as recovery and mixed return paths",
+  "compile": { "exit_code": 0 }, "run": { "exit_code": 42 }
+}

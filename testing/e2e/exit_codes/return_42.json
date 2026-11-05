@@ -1,4 +1,4 @@
 {
-  "schema_version": 1, "name": "e2e.exit_codes.return_42", "kind": "run", "source": "return_42.cns",
+  "schema_version": 2, "name": "e2e.exit_codes.return_42", "kind": "run", "source": "return_42.cns",
   "basis": "Bootstrap return depends on checked input, not a fixed template", "compile": { "exit_code": 0 }, "run": { "exit_code": 42 }
 }

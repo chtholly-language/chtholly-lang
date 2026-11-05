@@ -155,6 +155,36 @@ auto FixtureMain(int argc, char **argv) -> int {
     std::ofstream output(std::filesystem::u8path(marker));
     output << "ran";
   }
+  if (const auto *mode = std::getenv("CHTHOLLY_FIXTURE_MODE")) {
+    const std::string value(mode);
+    if (value == "run-crash") {
+      std::abort();
+    }
+    if (value == "run-timeout") {
+      for (;;) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
+    }
+    if (value == "run-abort") {
+      return 121;
+    }
+    if (value == "run-sanitizer") {
+      std::cerr << "AddressSanitizer: fixture report\n";
+      return 120;
+    }
+    if (value == "run-language-error" || value == "run-wrong-category") {
+      const auto source =
+          std::filesystem::u8path(argv[0]).parent_path().parent_path() /
+          "input" / "input.cns";
+      const auto utf8 = source.u8string();
+      std::cerr << std::string(utf8.begin(), utf8.end())
+                << ":2:3: chtholly failure["
+                << (value == "run-language-error" ? "Arithmetic.DivisionByZero"
+                                                  : "Arithmetic.Overflow")
+                << "]\n";
+      return 120;
+    }
+  }
   return 42;
 }
 

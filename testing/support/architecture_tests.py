@@ -10,6 +10,62 @@ CHECKER = None
 
 
 class ArchitectureTests(unittest.TestCase):
+    def test_runtime_subbuild_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            build = root / "out"
+            runtime = build / "target-runtime"
+            reply = runtime / ".cmake/api/v1/reply"
+            reply.mkdir(parents=True)
+            (root / "cmake").mkdir()
+            (root / "cmake/dependencies.json").write_text(json.dumps({"llvm_source": {"builtins": ["divti3"]}}), encoding="utf-8")
+            external = root / "external"
+            objects = [{"kind": "codemodel", "jsonFile": "model.json"}, {"kind": "cache", "jsonFile": "cache.json"}]
+            (reply / "index-1.json").write_text(json.dumps({"objects": objects}), encoding="utf-8")
+            targets = [{"id": "runtime", "name": "chtholly_target_runtime", "jsonFile": "runtime.json"},
+                       {"id": "builtins", "name": "chtholly_target_builtins", "jsonFile": "builtins.json"},
+                       {"id": "metadata", "name": "chtholly_runtime_metadata", "jsonFile": "metadata.json"}]
+            (reply / "model.json").write_text(json.dumps({"configurations": [{"targets": targets}]}), encoding="utf-8")
+            entries = [
+                {"name": "CHTHOLLY_LLVM_SOURCE_DIR", "value": str(external)},
+                {"name": "CMAKE_TOOLCHAIN_FILE", "value": str(root / "cmake/WindowsSDKManifest.cmake")},
+                {"name": "CMAKE_MT", "value": str(root / "sdk/bin/10.0.22621.0/x64/mt.exe")},
+            ]
+            cache_file = reply / "cache.json"
+            cache_file.write_text(json.dumps({"entries": entries}), encoding="utf-8")
+            source = root / "toolchain/runtime/runtime.cpp"
+            runtime_target = {"sources": [{"path": str(source), "compileGroupIndex": 0}], "dependencies": [{"id": "builtins"}]}
+            (reply / "runtime.json").write_text(json.dumps(runtime_target), encoding="utf-8")
+            (reply / "metadata.json").write_text(json.dumps({"dependencies": [{"id": "runtime"}]}), encoding="utf-8")
+            (reply / "builtins.json").write_text(json.dumps({"sources": [{
+                "path": str(external / "compiler-rt/lib/builtins/divti3.c"), "compileGroupIndex": 0}]}), encoding="utf-8")
+            properties = runtime / "architecture/runtime.txt"
+            properties.parent.mkdir()
+            record = ("compiler=Clang\nversion=18.1.8\npointer_bytes=8\ncrt=MultiThreadedDLL\n"
+                      f"includes={root / 'toolchain/runtime/include'};{root / 'toolchain/target/include'}\noptions=/fp:strict\n")
+            properties.write_text(record, encoding="utf-8")
+            CHECKER.inspect_runtime(root, build)
+            for wrong_tool in ("", str(root / "llvm/bin/llvm-mt.exe"), str(root / "sdk/bin/x86/mt.exe")):
+                entries[2]["value"] = wrong_tool
+                cache_file.write_text(json.dumps({"entries": entries}), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "Windows SDK x64 mt.exe"):
+                    CHECKER.inspect_runtime(root, build)
+            entries[2]["value"] = str(root / "sdk/bin/10.0.22621.0/x64/mt.exe")
+            entries[1]["value"] = str(root / "cmake/other.cmake")
+            cache_file.write_text(json.dumps({"entries": entries}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "SDK manifest toolchain"):
+                CHECKER.inspect_runtime(root, build)
+            entries[1]["value"] = str(root / "cmake/WindowsSDKManifest.cmake")
+            cache_file.write_text(json.dumps({"entries": entries}), encoding="utf-8")
+            properties.write_text(record.replace("MultiThreadedDLL", "MultiThreadedDebugDLL"), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                CHECKER.inspect_runtime(root, build)
+            properties.write_text(record, encoding="utf-8")
+            runtime_target["compileGroups"] = [{"compileCommandFragments": [{"fragment": "-fsanitize=address"}]}]
+            (reply / "runtime.json").write_text(json.dumps(runtime_target), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                CHECKER.inspect_runtime(root, build)
+
     def test_cycles(self):
         CHECKER.cycles({"a": {"b"}, "b": set()})
         with self.assertRaises(ValueError):
@@ -48,6 +104,21 @@ class ArchitectureTests(unittest.TestCase):
             self.assertTrue(CHECKER.scan_includes(root, modules))
             modules["lex"]["public"] = ["diagnostic"]
             self.assertEqual(CHECKER.scan_includes(root, modules), [])
+
+    def test_numeric_llvm_permission_is_private_and_component_limited(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private = root / "toolchain/numeric/numeric.cpp"
+            private.parent.mkdir(parents=True)
+            modules = {"numeric": {"links": [], "public": [], "llvm_headers": ["llvm/ADT/", "llvm/Support/"]}}
+            private.write_text("#include <llvm/ADT/APInt.h>\n", encoding="utf-8")
+            self.assertEqual(CHECKER.scan_includes(root, modules), [])
+            private.write_text("#include <llvm/IR/Module.h>\n", encoding="utf-8")
+            self.assertTrue(CHECKER.scan_includes(root, modules))
+            header = root / "toolchain/numeric/include/value.h"
+            header.parent.mkdir()
+            header.write_text("#include <llvm/ADT/APInt.h>\n", encoding="utf-8")
+            self.assertEqual(len(CHECKER.scan_includes(root, modules)), 2)
 
     def test_file_api_and_property_fixtures(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -52,8 +52,10 @@ def scan_includes(root, modules):
             for include in re.findall(r'^\s*#\s*include\s*[<"]([^">]+)', path.read_text(encoding="utf-8"), re.M):
                 if ".." in include.replace("\\", "/").split("/"):
                     failures.append(f"{path}: parent-relative include")
-                if include.startswith("llvm/") and ("include" in path.parts or module not in ("driver", "codegen")):
-                    failures.append(f"{path}: LLVM outside private backend boundary")
+                if include.startswith("llvm/"):
+                    allowed_headers = modules[module].get("llvm_headers", [])
+                    if "include" in path.parts or not any(include.startswith(prefix) for prefix in allowed_headers):
+                        failures.append(f"{path}: LLVM include outside declared private component boundary")
                 if include.startswith("Chtholly/") and include != "Chtholly/build_config.h":
                     component = include.split("/")[1]
                     target = canonical("Chtholly::" + component).removeprefix("chtholly_")
@@ -77,6 +79,65 @@ def scan_includes(root, modules):
     return failures
 
 
+def inspect_runtime(root, build):
+    """The independently compiled target runtime must provide real evidence."""
+    runtime_build = build / "target-runtime"
+    reply = runtime_build / ".cmake/api/v1/reply"
+    indexes = sorted(reply.glob("index-*.json"))
+    if not indexes:
+        raise ValueError("missing target runtime File API reply")
+    index = json.loads(indexes[-1].read_text(encoding="utf-8"))
+    objects = {item["kind"]: json.loads((reply / item["jsonFile"]).read_text(encoding="utf-8")) for item in index["objects"]}
+    targets = objects["codemodel"]["configurations"][0]["targets"]
+    names = {item["id"]: item["name"] for item in targets}
+    if set(names.values()) != {"chtholly_target_runtime", "chtholly_target_builtins", "chtholly_runtime_metadata"}:
+        raise ValueError("unexpected targets in runtime sub-build")
+    cache = {item["name"]: item["value"] for item in objects["cache"]["entries"]}
+    manifest_toolchain = root / "cmake/WindowsSDKManifest.cmake"
+    if Path(cache.get("CMAKE_TOOLCHAIN_FILE", "")).resolve() != manifest_toolchain.resolve():
+        raise ValueError("target runtime did not select the SDK manifest toolchain")
+    manifest_tool = Path(cache.get("CMAKE_MT", ""))
+    if manifest_tool.name.lower() != "mt.exe" or manifest_tool.parent.name.lower() != "x64":
+        raise ValueError("target runtime did not select Windows SDK x64 mt.exe")
+    source_root = Path(cache["CHTHOLLY_LLVM_SOURCE_DIR"]).resolve()
+    lock = json.loads((root / "cmake/dependencies.json").read_text(encoding="utf-8"))
+    expected_builtins = {(source_root / "compiler-rt/lib/builtins" / (name + ".c")).resolve()
+                         for name in lock["llvm_source"]["builtins"]}
+    properties = dict(line.split("=", 1) for line in (runtime_build / "architecture/runtime.txt").read_text(encoding="utf-8").splitlines() if "=" in line)
+    if (properties["compiler"], properties["version"], properties["pointer_bytes"], properties["crt"]) != (
+            "Clang", "18.1.8", "8", "MultiThreadedDLL"):
+        raise ValueError("target runtime toolchain or CRT mismatch")
+    allowed_includes = {(root / "toolchain/runtime/include").resolve(), (root / "toolchain/target/include").resolve()}
+    if {Path(item).resolve() for item in properties["includes"].split(";") if item} != allowed_includes:
+        raise ValueError("target runtime has undeclared include directories")
+    if "sanitize" in properties["options"].lower():
+        raise ValueError("target runtime unexpectedly inherits host sanitizer")
+    for item in targets:
+        target = json.loads((reply / item["jsonFile"]).read_text(encoding="utf-8"))
+        sources = {Path(source["path"]).resolve() for source in target.get("sources", []) if "compileGroupIndex" in source}
+        if item["name"] == "chtholly_target_builtins":
+            expected = expected_builtins
+            expected_dependencies = set()
+        elif item["name"] == "chtholly_target_runtime":
+            expected = {(root / "toolchain/runtime/runtime.cpp").resolve()}
+            expected_dependencies = {"chtholly_target_builtins"}
+        else:
+            expected = set()
+            expected_dependencies = {"chtholly_target_runtime"}
+        if sources != expected:
+            raise ValueError("runtime File API source inventory mismatch: " + item["name"])
+        for group in target.get("compileGroups", []):
+            if any("sanitize" in fragment["fragment"].lower() for fragment in group.get("compileCommandFragments", [])):
+                raise ValueError("runtime compile command contains a sanitizer")
+        dependencies = {names[dependency["id"]] for dependency in target.get("dependencies", [])}
+        allowed_dependencies = (expected_dependencies | {"chtholly_target_builtins"}
+                                if item["name"] == "chtholly_runtime_metadata" else expected_dependencies)
+        if not expected_dependencies <= dependencies or not dependencies <= allowed_dependencies:
+            raise ValueError("unexpected runtime dependency propagation")
+    if any(name.startswith("Python3_") and name.endswith("EXECUTABLE") for name in cache):
+        raise ValueError("target runtime discovered Python")
+
+
 def inspect(root, build):
     lock = json.loads((root / "cmake/module-dependencies.json").read_text(encoding="utf-8"))
     failures = scan_includes(root, lock["modules"])
@@ -90,7 +151,9 @@ def inspect(root, build):
     for module, spec in lock["modules"].items():
         specifications["chtholly_" + module] = {
             "links": ["chtholly_" + dep for dep in spec["links"]],
-            "public": ["chtholly_" + dep for dep in spec["public"]]}
+            "public": ["chtholly_" + dep for dep in spec["public"]],
+            "build": spec.get("build", []),
+            "llvm_libraries": spec.get("llvm_libraries", [])}
     graph = {}
     for name, props in exported.items():
         if name == "chtholly_public_headers":
@@ -106,12 +169,13 @@ def inspect(root, build):
         public = public_dependencies(props["interface_links"])
         if public != set(spec["public"]):
             failures.append(f"{name}: public dependencies differ: {public}")
-        if any(dep.startswith("LLVM") for dep in links) and name not in ("chtholly_codegen", "chtholly_driver"):
-            failures.append(f"{name}: unexpected LLVM dependency")
+        llvm_dependencies = {dep for dep in links if dep.startswith("LLVM")}
+        if llvm_dependencies != set(spec.get("llvm_libraries", [])):
+            failures.append(f"{name}: LLVM component dependencies differ: {llvm_dependencies}")
         external = {dep for dep in links - internal if not dep.startswith("LLVM")}
         if external != set(spec.get("external", [])):
             failures.append(f"{name}: unregistered external dependency: {external}")
-        graph[name] = internal | {dep for dep in public if dep.startswith("chtholly")}
+        graph[name] = internal | {dep for dep in public if dep.startswith("chtholly")} | set(spec.get("build", []))
         for include in props["public_includes"].split(";"):
             if not include:
                 continue
@@ -191,10 +255,15 @@ def inspect(root, build):
                         and (not frontend_only or spec.get("platform") != "windows")}
     if not required_targets <= exported.keys():
         failures.append(f"missing registered project targets: {required_targets - exported.keys()}")
-    if frontend_only and ({"chtholly_codegen", "chtholly_driver", "chthollyc"} & exported.keys()):
+    if frontend_only and ({"chtholly_codegen", "chtholly_driver", "chtholly_runtime", "chtholly_runtime_archive", "chthollyc"} & exported.keys()):
         failures.append("frontend configuration contains native product targets")
-    if frontend_only and any(name.startswith("LLVM_") for name in values):
-        failures.append("frontend configuration discovered LLVM")
+    if frontend_only:
+        for name, props in exported.items():
+            llvm_links = {dep for dep in dependencies(props["links"]) if dep.startswith("LLVM")}
+            if llvm_links and (name != "chtholly_numeric" or llvm_links - {"LLVMSupport", "LLVMDemangle"}):
+                failures.append(f"frontend target {name} depends on LLVM backend components")
+    elif "runtime" in lock["modules"]:
+        inspect_runtime(root, build)
     if values.get("BUILD_TESTING") == "OFF":
         if any("gtest" in name or name.endswith(("_tests", "_fixture")) or name.startswith("chtholly_test") for name in by_id.values()):
             failures.append("product-only configuration contains test targets")
@@ -215,7 +284,7 @@ def main():
         for failure in failures:
             print(failure, file=sys.stderr)
         return int(bool(failures))
-    except (OSError, ValueError, KeyError, StopIteration) as error:
+    except (OSError, ValueError, KeyError, StopIteration, TypeError, IndexError) as error:
         print(f"architecture infrastructure error: {error}", file=sys.stderr)
         return 2
 

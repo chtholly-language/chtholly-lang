@@ -4,7 +4,7 @@
 ## 当前 Bootstrap 数据流
 
 ```text
-.cns → Source → Lex → Parse → Check → SemIR → CodeGen → COFF 目标文件
+.cns → Source → Lex → Parse → Check → SemIR → Lower → IR 验证 → CodeGen → COFF 目标文件
                                                              ↓
                                                clang-cl / lld-link → exe
 ```
@@ -13,14 +13,19 @@ Driver 组织整个流程、工具调用和产物发布；Diagnostic 提供错�
 
 | 模块 | 当前职责 |
 | --- | --- |
-| Source | 读取原始源码字节、源范围和定位 |
-| Lex | 完整UTF-8验证、Bootstrap token、空白与行注释 |
-| Parse | 最小函数结构及源码范围 |
-| Check | main 签名、返回字面量及范围检查 |
-| SemIR | 仅承载已检查的 i32 返回常量 |
-| CodeGen | LLVM IR、目标设置与 COFF 目标文件生成 |
-| Driver | 命令行、阶段编排、工具定位、链接和最终发布 |
-| Diagnostic | 编译过程中的诊断记录与呈现 |
+| Target | Windows x64 的基础类型身份、位宽、对齐；不读取宿主 C 类型 | 只读值；CodeGen 对照 LLVM 数据布局，冲突即失败 |
+| Source | 文件字节和字节位置；UTF-8 检查仍由 Lex 负责 | Buffer 拥有文本和行起点；读取失败不返回 Buffer |
+| Diagnostic | 编译错误记录与渲染 | 记录拥有消息；只有渲染源码位置时借用仍有效的 Buffer |
+| Lex | UTF-8、token 边界、数字形状、注释 | token 范围借用同一 Buffer；非法输入不返回完整流 |
+| Parse | 函数和表达式结构、优先级、分号、类型语法 | AST 拥有节点数组，范围仍属于 Buffer；失败不返回占位树 |
+| Numeric | 精确数学整数、定宽位模式和目标浮点；不决定名称和类型推导 | Value 私有拥有 LLVM 存储；成功、规定失败、预算和内部错误分别表达 |
+| SemIR | 类型、声明、局部位置、规范操作、正常完成性 | Program 独立拥有记录和常量；成功后只读，不借用 AST |
+| Check | 作用域、定型、可写性、恢复资格和常量检查 | source/tree 必须属于同一次输入；任一错误均不发布成功 Program |
+| IR | 执行块、值、位置和独立验证 | ID 只在所属程序/函数记录中解释；失败不创建 IR::Program |
+| Lower | 将受检语义变成明确求值顺序和分支 | 消费只读 SemIR；拥有输出 Draft，然后交给验证器 |
+| CodeGen | 内部 ABI、LLVM 指令、COFF | 只收 IR::Program；写调用者给出的临时对象，失败由 Driver 清理 |
+| Runtime | 受检数值辅助、浮点环境、语言终止 | Windows 目标代码；按字接口；不包括字符串库、分配器、用户展开 |
+| Driver | 阶段生命周期、工具与运行库身份、可靠发布 | 只在链接成功并复查目的地后替换输出；失败保留已有成功产物 |
 
 各模块导出自己的 `include/Chtholly/<Module>`，C++ 根命名空间为 `Chtholly`，子命名空间按模块划分。依赖通过模块级 CMake target 明确表达。
 

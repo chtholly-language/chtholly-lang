@@ -1,5 +1,5 @@
 {
-  "schema_version": 1, "name": "regression.syntax.parameters", "kind": "compile_fail",
-  "source": "parameters.cns", "basis": "Bootstrap has no parameters; nearest positive: e2e.exit_codes.return_0",
-  "compile": { "exit_code": 1, "stderr": { "contains": ["parameters.cns:1:9: error:", "does not support parameters"] } }
+  "schema_version": 2, "name": "regression.semantic.main_parameters", "kind": "compile_fail",
+  "source": "parameters.cns", "basis": "Ordinary B2 functions accept parameters; native main does not",
+  "compile": { "exit_code": 1, "stderr": { "contains": ["parameters.cns:1:4: error:", "main must have no parameters"] } }
 }

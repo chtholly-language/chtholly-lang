@@ -5,14 +5,18 @@
 #include <Chtholly/CodeGen/codegen.h>
 #include <Chtholly/Diagnostic/diagnostic.h>
 #include <Chtholly/Lex/lex.h>
+#include <Chtholly/Lower/lower.h>
 #include <Chtholly/Parse/parse.h>
+#include <Chtholly/Runtime/abi.h>
 #include <Chtholly/Source/source.h>
+#include <Chtholly/Target/target.h>
 #include <Chtholly/build_config.h>
 
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/Program.h>
+#include <llvm/Support/SHA256.h>
 
 #include <windows.h>
 
@@ -50,6 +54,73 @@ auto NativePath(std::string_view utf8) -> FS::path {
 auto UTF8Path(const FS::path &path) -> std::string {
   const auto value = path.u8string();
   return {value.begin(), value.end()};
+}
+
+auto FindRuntime(Diagnostic::Diagnostics &diagnostics)
+    -> std::optional<FS::path> {
+  std::vector<wchar_t> module(32768);
+  const auto length = GetModuleFileNameW(nullptr, module.data(),
+                                         static_cast<DWORD>(module.size()));
+  if (length == 0 || length >= module.size()) {
+    diagnostics.error("runtime", "cannot locate compiler executable");
+    return std::nullopt;
+  }
+  const auto directory =
+      FS::path(std::wstring(module.data(), length)).parent_path() / L"lib";
+  const auto archive = directory / L"chtholly-runtime.lib";
+  std::ifstream metadata(directory / L"chtholly-runtime.meta");
+  std::array<std::string, 6> records;
+  for (auto &record : records) {
+    if (!std::getline(metadata, record)) {
+      diagnostics.error("runtime", "missing or incomplete runtime metadata: " +
+                                       UTF8Path(directory));
+      return std::nullopt;
+    }
+    if (!record.empty() && record.back() == '\r') {
+      record.pop_back();
+    }
+  }
+  std::string extra;
+  if (std::getline(metadata, extra) ||
+      records[0] != "abi=" + std::to_string(Runtime::ABIVersion) ||
+      records[1] != "target=" + std::string(Target::WindowsX64.Triple) ||
+      records[2] != "llvm=18.1.8" ||
+      records[3] != "source=3b5b5c1ec4a3095ab096dd780e84d7ab81f3d7ff" ||
+      records[5] !=
+          "implementation=" + std::string(BuildConfig::RuntimeImplementation)) {
+    diagnostics.error("runtime",
+                      "runtime identity does not match this compiler");
+    return std::nullopt;
+  }
+  std::ifstream input(archive, std::ios::binary);
+  llvm::SHA256 hash;
+  std::array<char, 65536> bytes;
+  std::size_t total = 0;
+  while (input) {
+    input.read(bytes.data(), bytes.size());
+    const auto count = input.gcount();
+    if (count > 0) {
+      hash.update(
+          llvm::StringRef(bytes.data(), static_cast<std::size_t>(count)));
+      total += static_cast<std::size_t>(count);
+    }
+  }
+  if (total == 0 || !input.eof()) {
+    diagnostics.error("runtime", "cannot read a nonempty runtime archive: " +
+                                     UTF8Path(archive));
+    return std::nullopt;
+  }
+  constexpr char Hex[] = "0123456789abcdef";
+  std::string digest;
+  for (const auto byte : hash.final()) {
+    digest += Hex[byte >> 4];
+    digest += Hex[byte & 15];
+  }
+  if (records[4] != "sha256=" + digest) {
+    diagnostics.error("runtime", "runtime archive checksum mismatch");
+    return std::nullopt;
+  }
+  return archive;
 }
 
 struct Options {
@@ -293,6 +364,14 @@ auto Compile(const Options &options) -> int {
   if (!program) {
     return failure();
   }
+  const auto execution = Lower::Lower(*program, diagnostics);
+  if (!execution) {
+    return failure();
+  }
+  const auto runtime = FindRuntime(diagnostics);
+  if (!runtime) {
+    return failure();
+  }
   const auto output = FS::absolute(NativePath(options.Output), error);
   if (error) {
     diagnostics.error("output", "cannot resolve '" + options.Output +
@@ -311,7 +390,7 @@ auto Compile(const Options &options) -> int {
     return failure();
   }
   const auto object = UTF8Path(temporary.file("main.obj"));
-  if (!CodeGen::EmitObject(*program, object, diagnostics)) {
+  if (!CodeGen::EmitObject(*execution, object, diagnostics)) {
     return failure();
   }
   const auto executable = temporary.file("linked.exe");
@@ -320,10 +399,11 @@ auto Compile(const Options &options) -> int {
   const std::vector<std::string> arguments = {
       UTF8Path(tools->Clang),
       "/nologo",
-      "--target=" + std::string(BuildConfig::Target),
+      "--target=" + std::string(Target::WindowsX64.Triple),
       "-fuse-ld=lld",
       "/clang:-B" + UTF8Path(tools->Linker.parent_path()),
       object,
+      UTF8Path(*runtime),
       "/Fe" + UTF8Path(executable),
       "/link",
       "/subsystem:console",
@@ -364,8 +444,8 @@ auto Run(std::span<const std::string> arguments) -> int {
   }
   if (arguments.size() == 1 && arguments.front() == "--version") {
     std::cout << "Chtholly " << BuildConfig::Version << "\nLLVM "
-              << BuildConfig::LLVMVersion << "\nTarget " << BuildConfig::Target
-              << '\n';
+              << BuildConfig::LLVMVersion << "\nTarget "
+              << Target::WindowsX64.Triple << '\n';
     return 0;
   }
   const auto options = ParseOptions(arguments);

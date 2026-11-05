@@ -1,0 +1,4 @@
+fn divide(value: i32) -> i32 {
+    return 1 / value;
+}
+fn main() -> i32 { return divide(0); }

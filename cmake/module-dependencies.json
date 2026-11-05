@@ -1,26 +1,395 @@
 {
   "schema_version": 1,
   "modules": {
-    "source": { "links": [], "public": [], "platform": "frontend", "public_include_root": "toolchain/source/include", "private_root": "toolchain/source" },
-    "diagnostic": { "links": ["source"], "public": [], "platform": "frontend", "public_include_root": "toolchain/diagnostic/include", "private_root": "toolchain/diagnostic" },
-    "lex": { "links": ["source", "diagnostic"], "public": ["source"], "platform": "frontend", "public_include_root": "toolchain/lex/include", "private_root": "toolchain/lex" },
-    "parse": { "links": ["lex", "diagnostic"], "public": ["lex"], "platform": "frontend", "public_include_root": "toolchain/parse/include", "private_root": "toolchain/parse" },
-    "sem_ir": { "links": [], "public": [], "platform": "frontend", "public_include_root": "toolchain/sem_ir/include", "private_root": "toolchain/sem_ir" },
-    "check": { "links": ["sem_ir", "parse", "diagnostic", "source"], "public": ["sem_ir"], "platform": "frontend", "public_include_root": "toolchain/check/include", "private_root": "toolchain/check" },
-    "codegen": { "links": ["sem_ir", "diagnostic"], "public": [], "platform": "windows", "llvm_private": true, "public_include_root": "toolchain/codegen/include", "private_root": "toolchain/codegen" },
-    "driver": { "links": ["source", "diagnostic", "lex", "parse", "sem_ir", "check", "codegen"], "public": [], "platform": "windows", "llvm_private": true, "public_include_root": "toolchain/driver/include", "private_root": "toolchain/driver" }
+    "source": {
+      "links": [],
+      "public": [],
+      "platform": "frontend",
+      "public_include_root": "toolchain/source/include",
+      "private_root": "toolchain/source"
+    },
+    "diagnostic": {
+      "links": [
+        "source"
+      ],
+      "public": [],
+      "platform": "frontend",
+      "public_include_root": "toolchain/diagnostic/include",
+      "private_root": "toolchain/diagnostic"
+    },
+    "lex": {
+      "links": [
+        "source",
+        "diagnostic"
+      ],
+      "public": [
+        "source"
+      ],
+      "platform": "frontend",
+      "public_include_root": "toolchain/lex/include",
+      "private_root": "toolchain/lex"
+    },
+    "parse": {
+      "links": [
+        "lex",
+        "diagnostic"
+      ],
+      "public": [
+        "lex"
+      ],
+      "platform": "frontend",
+      "public_include_root": "toolchain/parse/include",
+      "private_root": "toolchain/parse"
+    },
+    "sem_ir": {
+      "links": [
+        "numeric",
+        "source"
+      ],
+      "public": [
+        "numeric",
+        "source"
+      ],
+      "platform": "frontend",
+      "public_include_root": "toolchain/sem_ir/include",
+      "private_root": "toolchain/sem_ir"
+    },
+    "check": {
+      "links": [
+        "sem_ir",
+        "parse",
+        "diagnostic",
+        "source",
+        "numeric",
+        "target"
+      ],
+      "public": [
+        "sem_ir"
+      ],
+      "platform": "frontend",
+      "public_include_root": "toolchain/check/include",
+      "private_root": "toolchain/check"
+    },
+    "codegen": {
+      "links": [
+        "ir",
+        "numeric",
+        "target",
+        "runtime",
+        "diagnostic"
+      ],
+      "public": [],
+      "platform": "windows",
+      "llvm_private": true,
+      "public_include_root": "toolchain/codegen/include",
+      "private_root": "toolchain/codegen",
+      "llvm_headers": [
+        "llvm/"
+      ],
+      "llvm_libraries": [
+        "LLVMCore",
+        "LLVMSupport",
+        "LLVMCodeGen",
+        "LLVMTarget",
+        "LLVMMC",
+        "LLVMX86CodeGen",
+        "LLVMX86Desc",
+        "LLVMX86Info"
+      ]
+    },
+    "driver": {
+      "links": [
+        "source",
+        "diagnostic",
+        "lex",
+        "parse",
+        "sem_ir",
+        "check",
+        "codegen",
+        "lower",
+        "ir",
+        "target",
+        "runtime"
+      ],
+      "public": [],
+      "platform": "windows",
+      "llvm_private": true,
+      "public_include_root": "toolchain/driver/include",
+      "private_root": "toolchain/driver",
+      "llvm_headers": [
+        "llvm/ADT/",
+        "llvm/Support/"
+      ],
+      "llvm_libraries": [
+        "LLVMSupport"
+      ]
+    },
+    "target": {
+      "public_include_root": "toolchain/target/include",
+      "platform": "frontend",
+      "private_root": "toolchain/target",
+      "public": [],
+      "links": []
+    },
+    "numeric": {
+      "private_root": "toolchain/numeric",
+      "platform": "frontend",
+      "llvm_headers": [
+        "llvm/ADT/",
+        "llvm/Support/"
+      ],
+      "public": [
+        "target"
+      ],
+      "public_include_root": "toolchain/numeric/include",
+      "links": [
+        "target"
+      ],
+      "llvm_libraries": [
+        "LLVMSupport",
+        "LLVMDemangle"
+      ]
+    },
+    "ir": {
+      "public_include_root": "toolchain/ir/include",
+      "platform": "frontend",
+      "private_root": "toolchain/ir",
+      "public": [
+        "numeric",
+        "source"
+      ],
+      "links": [
+        "numeric",
+        "source",
+        "diagnostic",
+        "target"
+      ]
+    },
+    "lower": {
+      "public_include_root": "toolchain/lower/include",
+      "platform": "frontend",
+      "private_root": "toolchain/lower",
+      "public": [
+        "ir",
+        "sem_ir"
+      ],
+      "links": [
+        "ir",
+        "sem_ir",
+        "diagnostic",
+        "numeric",
+        "target"
+      ]
+    },
+    "runtime": {
+      "public_include_root": "toolchain/runtime/include",
+      "platform": "windows",
+      "private_root": "toolchain/runtime",
+      "public": [
+        "target"
+      ],
+      "links": [
+        "target"
+      ]
+    }
   },
   "targets": {
-    "chthollyc": { "links": ["chtholly_driver"], "public": [], "platform": "windows" },
-    "chtholly_test_support": { "links": [], "public": ["chtholly_source", "chtholly_diagnostic"], "testing": true },
-    "chtholly_source_tests": { "links": ["GTest::gtest_main", "chtholly_test_support", "chtholly_source"], "public": [], "testing": true },
-    "chtholly_diagnostic_tests": { "links": ["GTest::gtest_main", "chtholly_test_support", "chtholly_diagnostic"], "public": [], "testing": true },
-    "chtholly_lex_tests": { "links": ["GTest::gtest_main", "chtholly_test_support", "chtholly_lex"], "public": [], "testing": true },
-    "chtholly_parse_tests": { "links": ["GTest::gtest_main", "chtholly_test_support", "chtholly_parse"], "public": [], "testing": true },
-    "chtholly_check_tests": { "links": ["GTest::gtest_main", "chtholly_test_support", "chtholly_lex", "chtholly_parse", "chtholly_check"], "public": [], "testing": true },
-    "chtholly_pipeline_tests": { "links": ["GTest::gtest_main", "chtholly_test_support", "chtholly_source", "chtholly_diagnostic", "chtholly_lex", "chtholly_parse", "chtholly_check"], "public": [], "testing": true },
-    "chtholly_codegen_tests": { "links": ["GTest::gtest_main", "chtholly_test_support", "chtholly_source", "chtholly_diagnostic", "chtholly_lex", "chtholly_parse", "chtholly_check", "chtholly_codegen"], "public": [], "testing": true, "platform": "windows" },
-    "chtholly_process_fixture": { "links": [], "public": [], "external": ["Threads::Threads"], "testing": true },
-    "chtholly_tool_fixture": { "links": [], "public": [], "testing": true, "platform": "windows" }
+    "chthollyc": {
+      "links": [
+        "chtholly_driver"
+      ],
+      "public": [],
+      "platform": "windows",
+      "build": [
+        "chtholly_runtime_archive"
+      ]
+    },
+    "chtholly_test_support": {
+      "links": [
+        "chtholly_source",
+        "chtholly_diagnostic"
+      ],
+      "public": [
+        "chtholly_source",
+        "chtholly_diagnostic"
+      ],
+      "testing": true
+    },
+    "chtholly_source_tests": {
+      "links": [
+        "GTest::gtest_main",
+        "chtholly_test_support",
+        "chtholly_source"
+      ],
+      "public": [],
+      "testing": true
+    },
+    "chtholly_diagnostic_tests": {
+      "links": [
+        "GTest::gtest_main",
+        "chtholly_test_support",
+        "chtholly_diagnostic"
+      ],
+      "public": [],
+      "testing": true
+    },
+    "chtholly_lex_tests": {
+      "links": [
+        "GTest::gtest_main",
+        "chtholly_test_support",
+        "chtholly_lex"
+      ],
+      "public": [],
+      "testing": true
+    },
+    "chtholly_parse_tests": {
+      "links": [
+        "GTest::gtest_main",
+        "chtholly_test_support",
+        "chtholly_parse"
+      ],
+      "public": [],
+      "testing": true
+    },
+    "chtholly_check_tests": {
+      "links": [
+        "GTest::gtest_main",
+        "chtholly_test_support",
+        "chtholly_source",
+        "chtholly_diagnostic",
+        "chtholly_lex",
+        "chtholly_parse",
+        "chtholly_check",
+        "chtholly_sem_ir",
+        "chtholly_numeric",
+        "chtholly_target",
+        "chtholly_ir",
+        "chtholly_lower"
+      ],
+      "public": [],
+      "testing": true
+    },
+    "chtholly_pipeline_tests": {
+      "links": [
+        "GTest::gtest_main",
+        "chtholly_test_support",
+        "chtholly_source",
+        "chtholly_diagnostic",
+        "chtholly_lex",
+        "chtholly_parse",
+        "chtholly_check",
+        "chtholly_sem_ir",
+        "chtholly_numeric",
+        "chtholly_target",
+        "chtholly_ir",
+        "chtholly_lower"
+      ],
+      "public": [],
+      "testing": true
+    },
+    "chtholly_codegen_tests": {
+      "links": [
+        "GTest::gtest_main",
+        "chtholly_test_support",
+        "chtholly_source",
+        "chtholly_diagnostic",
+        "chtholly_lex",
+        "chtholly_parse",
+        "chtholly_check",
+        "chtholly_sem_ir",
+        "chtholly_numeric",
+        "chtholly_target",
+        "chtholly_ir",
+        "chtholly_lower",
+        "chtholly_codegen"
+      ],
+      "public": [],
+      "testing": true,
+      "platform": "windows"
+    },
+    "chtholly_process_fixture": {
+      "links": [],
+      "public": [],
+      "external": [
+        "Threads::Threads"
+      ],
+      "testing": true
+    },
+    "chtholly_tool_fixture": {
+      "links": [],
+      "public": [],
+      "testing": true,
+      "platform": "windows"
+    },
+    "chtholly_runtime_archive": {
+      "platform": "windows",
+      "public": [],
+      "links": []
+    },
+    "chtholly_numeric_tests": {
+      "testing": true,
+      "links": [
+        "GTest::gtest_main",
+        "chtholly_test_support",
+        "chtholly_numeric"
+      ],
+      "public": []
+    },
+    "chtholly_ir_tests": {
+      "testing": true,
+      "links": [
+        "GTest::gtest_main",
+        "chtholly_test_support",
+        "chtholly_source",
+        "chtholly_diagnostic",
+        "chtholly_lex",
+        "chtholly_parse",
+        "chtholly_check",
+        "chtholly_sem_ir",
+        "chtholly_numeric",
+        "chtholly_target",
+        "chtholly_ir",
+        "chtholly_lower"
+      ],
+      "public": []
+    },
+    "chtholly_object_fixture": {
+      "testing": true,
+      "platform": "windows",
+      "links": [
+        "chtholly_test_support",
+        "chtholly_source",
+        "chtholly_diagnostic",
+        "chtholly_lex",
+        "chtholly_parse",
+        "chtholly_check",
+        "chtholly_sem_ir",
+        "chtholly_numeric",
+        "chtholly_target",
+        "chtholly_ir",
+        "chtholly_lower",
+        "chtholly_codegen",
+        "chtholly_codegen_test_adapter"
+      ],
+      "public": []
+    },
+    "chtholly_native_bridge_fixture": {
+      "testing": true,
+      "platform": "windows",
+      "links": [
+        "chtholly_runtime"
+      ],
+      "public": []
+    },
+    "chtholly_codegen_test_adapter": {
+      "public": [
+        "chtholly_codegen"
+      ],
+      "platform": "windows",
+      "links": [
+        "chtholly_codegen"
+      ],
+      "testing": true
+    }
   }
 }

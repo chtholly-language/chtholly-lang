@@ -40,6 +40,9 @@ foreach ($tool in @('clang-cl.exe','lld-link.exe','clang-format.exe','clang-tidy
 foreach ($path in @($llvmBin, $ninjaBin, $cmakeBin)) { $path | Out-File -LiteralPath $env:GITHUB_PATH -Append -Encoding utf8 }
 "CHTHOLLY_LLVM_DIR=$llvmPackage" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
 "CHTHOLLY_LLVM_BIN=$llvmBin" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+$llvmSource = Join-Path $extraction 'llvm-source'
+& (Join-Path $PSScriptRoot '../prepare-llvm-source.ps1') -Destination $llvmSource
+"CHTHOLLY_LLVM_SOURCE_DIR=$llvmSource" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
 if (-not $ProductOnly) {
     $gtest = Join-Path $extraction 'googletest'
     git clone --no-checkout $lock.googletest.repository $gtest

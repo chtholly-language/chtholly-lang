@@ -1,5 +1,5 @@
 {
-  "schema_version": 1, "name": "regression.syntax.trailing_input", "kind": "compile_fail",
-  "source": "trailing.cns", "basis": "Bootstrap requires EOF; nearest positive: e2e.exit_codes.return_0",
-  "compile": { "exit_code": 1, "stderr": { "contains": ["trailing.cns:1:32: error:", "expected end of input"] } }
+  "schema_version": 2, "name": "regression.syntax.trailing_input", "kind": "compile_fail",
+  "source": "trailing.cns", "basis": "Top-level trailing text must be another complete function declaration",
+  "compile": { "exit_code": 1, "stderr": { "contains": ["trailing.cns:1:32: error:", "expected 'fn'"] } }
 }

@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+Checks: '-*,clang-analyzer-*,bugprone-dangling-handle,bugprone-sizeof-expression,bugprone-use-after-move,performance-for-range-copy,performance-unnecessary-copy-initialization'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*(toolchain|testing)[\\/].*'
+FormatStyle: file

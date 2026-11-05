@@ -1,0 +1,5 @@
+{
+  "schema_version": 2, "name": "e2e.core.unreachable", "kind": "run",
+  "source": "unreachable.cns", "basis": "B2-A21/A36: Q2 suppresses evaluation failures on absent paths",
+  "compile": { "exit_code": 0 }, "run": { "exit_code": 42 }
+}

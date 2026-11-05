@@ -135,10 +135,21 @@ def main():
             compiler_version = subprocess.run(command, capture_output=True, timeout=15)
             summary["tools"]["host_compiler"] = (compiler_version.stdout + compiler_version.stderr).decode("utf-8", "replace")[:2048]
         llvm_dir = cache.get("LLVM_DIR")
-        if llvm_dir:
+        if llvm_dir and cache.get("CHTHOLLY_FRONTEND_ONLY") != "ON":
             llvm_bin = (Path(llvm_dir) / "../../../bin").resolve()
             summary["tools"]["clang_cl"] = subprocess.check_output([str(llvm_bin / "clang-cl.exe"), "--version"], timeout=15).decode("utf-8", "replace")
             summary["tools"]["lld_link"] = subprocess.check_output([str(llvm_bin / "lld-link.exe"), "--version"], timeout=15).decode("utf-8", "replace")
+        summary["rules"] = "R2/B2, Q1-Q5, !, value-producing as-else, uninhabited-parameter normal-entry decision"
+        dependency_lock = json.loads((root / "cmake/dependencies.json").read_text(encoding="utf-8"))
+        summary["numeric_library"] = dependency_lock["llvm_source"]
+        summary["coverage_boundaries"] = {
+            "llvm_support": "external uninstrumented 18.1.8 library",
+            "target_runtime": "uninstrumented Windows clang-cl /MD; separate target execution cases",
+            "frontend_target": "Windows x64 even when host is Linux"}
+        runtime = build / "bin/lib/chtholly-runtime.lib"
+        if runtime.is_file():
+            summary["runtime"] = {"sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(),
+                                  "metadata": (runtime.parent / "chtholly-runtime.meta").read_text(encoding="utf-8")}
         expected = {}
         for line in (build / "testing/expected-tests.txt").read_text(encoding="utf-8").splitlines():
             name, labels = line.split("|", 1)
@@ -179,14 +190,21 @@ def main():
         # JUnit is the sole total. Per-source-case reasons are supplementary,
         # not additional tests to add to the pass count.
         details = {}
+        component_details = {}
         for file in (report / "cases").rglob("result.json"):
             detail = json.loads(file.read_text(encoding="utf-8"))
+            if isinstance(detail, dict) and "case" in detail:
+                component_details["integration.numeric." + detail["case"]] = {
+                    "status": detail["status"], "error": detail.get("error"),
+                    "inputs": detail.get("inputs"), "expectation": detail.get("expectation"),
+                    "report": str(file.relative_to(report))}
             if isinstance(detail, dict) and "name" in detail:
                 details[detail["name"]] = {
                     "status": detail["status"], "error": detail.get("error"),
                     "stage_failures": {stage: detail[stage].get("failure") for stage in ("compile", "run")
                                        if detail[stage].get("executed")}}
         summary["source_case_details"] = details
+        summary["native_component_details"] = component_details
         if execution.failure or execution.returncode or summary["skipped"] or summary["failed"]:
             summary["status"] = "failed"
             return 1

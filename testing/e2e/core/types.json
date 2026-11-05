@@ -1,0 +1,5 @@
+{
+  "schema_version": 2, "name": "e2e.core.types", "kind": "run",
+  "source": "types.cns", "basis": "B2-A01/A23/A33: complete scalar family and no-entry declaration",
+  "compile": { "exit_code": 0 }, "run": { "exit_code": 42 }
+}

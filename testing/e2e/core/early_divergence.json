@@ -1,0 +1,5 @@
+{
+  "schema_version": 2, "name": "e2e.core.early_divergence", "kind": "run_abort",
+  "source": "early_divergence.cns", "basis": "B2-A30: first argument aborts; later panic is checked but not executed",
+  "compile": { "exit_code": 0 }, "run": { "exit_code": 121 }
+}

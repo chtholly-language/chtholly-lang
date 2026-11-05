@@ -1,0 +1,11 @@
+fn narrow(value: i32) -> u8 {
+    let result = value as u8 else { 0 };
+    return result;
+}
+
+fn main() -> i32 {
+    var answer = 40;
+    answer = answer + 2;
+    assert(narrow(answer) == 42u8);
+    return answer;
+}

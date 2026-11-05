@@ -1,5 +1,5 @@
 {
-  "schema_version": 1, "name": "regression.syntax.missing_semicolon", "kind": "compile_fail",
+  "schema_version": 2, "name": "regression.syntax.missing_semicolon", "kind": "compile_fail",
   "source": "missing_semicolon.cns", "basis": "Bootstrap grammar requires semicolon; nearest positive: e2e.exit_codes.return_0",
   "compile": { "exit_code": 1, "stderr": { "contains": ["missing_semicolon.cns:3:1: error:", "expected ';'"] } }
 }

@@ -1,0 +1,8 @@
+{
+  "schema_version": 2, "name": "e2e.core.runtime_failure", "kind": "run_fail",
+  "source": "runtime_failure.cns", "basis": "B2-A24: checked operation fails with an exact language identity",
+  "compile": { "exit_code": 0 },
+  "run": { "exit_code": 120, "failure": {
+    "category": "Arithmetic.DivisionByZero", "file": "runtime_failure.cns", "line": 2, "column": 14
+  } }
+}

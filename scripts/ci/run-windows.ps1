@@ -27,9 +27,21 @@ cmake --preset $Preset 2>&1 | Tee-Object -FilePath (Join-Path $report 'configure
 if ($LASTEXITCODE -ne 0) { throw 'Configure failed' }
 cmake --build --preset $Preset --parallel 3 2>&1 | Tee-Object -FilePath (Join-Path $report 'build.log')
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+$runtimeReport = Join-Path $report 'target-runtime'
+[void][IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($runtimeReport))
+foreach ($evidence in @("$build/bin/lib/chtholly-runtime.meta", "$build/target-runtime/CMakeCache.txt", "$build/target-runtime/compile_commands.json")) {
+    if (-not (Test-Path -LiteralPath $evidence -PathType Leaf)) { throw "Target runtime evidence missing: $evidence" }
+    Copy-Item -LiteralPath $evidence -Destination $runtimeReport
+}
+Copy-Item -LiteralPath "$build/target-runtime/.cmake/api/v1/reply" -Destination (Join-Path $runtimeReport 'file-api') -Recurse
+Copy-Item -LiteralPath "$build/target-runtime/architecture/runtime.txt" -Destination $runtimeReport
 if ($Mode -eq 'product') {
     $names = @(Get-ChildItem -LiteralPath "$build/architecture" -Filter '*.txt' | Select-Object -ExpandProperty BaseName)
-    if ($names.Count -ne 9 -or @($names | Where-Object { $_ -match 'test|fixture|gtest' }).Count -ne 0) {
+    $matrix = Get-Content -LiteralPath 'cmake/module-dependencies.json' -Raw | ConvertFrom-Json
+    $expectedNames = @($matrix.modules.PSObject.Properties | ForEach-Object { "chtholly_$($_.Name)" })
+    $expectedNames += @($matrix.targets.PSObject.Properties | Where-Object { -not $_.Value.testing } | ForEach-Object { $_.Name })
+    if (@(Compare-Object ($expectedNames | Sort-Object) ($names | Sort-Object)).Count -ne 0 -or
+        @($names | Where-Object { $_ -match 'test|fixture|gtest' }).Count -ne 0) {
         throw 'Product-only dependency isolation failed'
     }
     if (Select-String -LiteralPath "$build/CMakeCache.txt" -Pattern '^Python3_.*EXECUTABLE.*:' -Quiet) {

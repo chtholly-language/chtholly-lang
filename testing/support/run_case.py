@@ -16,6 +16,11 @@ from typing import Any
 
 from process import run
 
+FAILURE_CATEGORIES = {"Arithmetic.Overflow", "Arithmetic.DivisionByZero", "Arithmetic.ShiftCount",
+                      "Conversion.OutOfRange", "Conversion.PrecisionLoss", "Conversion.NonFinite",
+                      "Conversion.Fractional", "Panic", "Assertion"}
+RUN_KINDS = ("run", "run_fail", "run_abort")
+
 
 class ConfigurationError(ValueError):
     pass
@@ -48,24 +53,24 @@ def stream_rule(value: Any) -> None:
 
 def validate(data: Any) -> dict:
     fields(data, {"schema_version", "name", "kind", "source", "compile", "basis"}, {"run"}, "case")
-    if type(data["schema_version"]) is not int or data["schema_version"] != 1:
+    if type(data["schema_version"]) is not int or data["schema_version"] != 2:
         raise ConfigurationError("unsupported schema_version")
     if not isinstance(data["name"], str) or not re.fullmatch(r"(?:regression|e2e)\.[a-z0-9_]+\.[a-z0-9_]+", data["name"]):
         raise ConfigurationError("invalid case name")
-    if data["kind"] not in ("compile", "compile_fail", "run"):
+    if data["kind"] not in ("compile", "compile_fail", *RUN_KINDS):
         raise ConfigurationError("unsupported kind")
     if not isinstance(data["basis"], str) or not data["basis"].strip():
         raise ConfigurationError("basis is required")
     if (not isinstance(data["source"], str) or not data["source"]
             or Path(data["source"]).is_absolute() or PureWindowsPath(data["source"]).anchor):
         raise ConfigurationError("source must be relative to the manifest")
-    if ("run" in data) != (data["kind"] == "run"):
-        raise ConfigurationError("only kind=run requires a run stage")
+    if ("run" in data) != (data["kind"] in RUN_KINDS):
+        raise ConfigurationError("run kinds require exactly one run stage")
     for name in ("compile", "run"):
         if name not in data:
             continue
         stage = data[name]
-        fields(stage, {"exit_code"}, {"timeout_seconds", "stdout", "stderr"}, name)
+        fields(stage, {"exit_code"}, {"timeout_seconds", "stdout", "stderr", "failure"} if name == "run" else {"timeout_seconds", "stdout", "stderr"}, name)
         if type(stage["exit_code"]) is not int or not 0 <= stage["exit_code"] <= 2147483647:
             raise ConfigurationError("exit_code must be a normal nonnegative integer")
         timeout = stage.get("timeout_seconds", 30 if name == "compile" else 5)
@@ -86,6 +91,25 @@ def validate(data: Any) -> dict:
             raise ConfigurationError("source failures require file/line/column and reason matching")
     elif expected != 0:
         raise ConfigurationError("successful compilation requires exit_code=0")
+    if data["kind"] == "run_fail":
+        stage = data["run"]
+        if stage["exit_code"] != 120 or "failure" not in stage:
+            raise ConfigurationError("run_fail requires exit_code=120 and structured failure")
+        failure = stage["failure"]
+        fields(failure, {"category", "file", "line", "column"}, set(), "run.failure")
+        if not isinstance(failure["category"], str) or failure["category"] not in FAILURE_CATEGORIES:
+            raise ConfigurationError("unknown language failure category")
+        if failure["file"] != Path(data["source"]).name:
+            raise ConfigurationError("run.failure.file must identify the case source filename")
+        if any(type(failure[key]) is not int or failure[key] < 1 for key in ("line", "column")):
+            raise ConfigurationError("language failure requires positive line and column")
+    elif "run" in data and "failure" in data["run"]:
+        raise ConfigurationError("only run_fail accepts a failure expectation")
+    if data["kind"] == "run_abort":
+        if data["run"]["exit_code"] != 121:
+            raise ConfigurationError("run_abort requires exit_code=121")
+        if any(data["run"].get(stream, {"exact": ""}) != {"exact": ""} for stream in ("stdout", "stderr")):
+            raise ConfigurationError("abort must not emit a language diagnostic or normal output")
     return data
 
 
@@ -109,7 +133,7 @@ def execute_case(compiler: Path, manifest: Path, work_dir: Path, report_dir: Pat
         result["manifest_sha256"] = hashlib.sha256(manifest_bytes).hexdigest()
         data = validate(json.loads(manifest_bytes.decode("utf-8"), object_pairs_hook=unique_object))
         result["name"] = data["name"]
-        if data["kind"] != "run":
+        if data["kind"] not in RUN_KINDS:
             result["run"]["reason"] = "case has no run stage"
         if not compiler.is_file():
             raise ConfigurationError(f"compiler missing: {compiler}")
@@ -127,7 +151,7 @@ def execute_case(compiler: Path, manifest: Path, work_dir: Path, report_dir: Pat
                       compiler=str(compiler), compiler_sha256=hashlib.sha256(compiler.read_bytes()).hexdigest(),
                       source_sha256=hashlib.sha256(source_copy.read_bytes()).hexdigest())
         for name in ("compile", "run"):
-            if name == "run" and data["kind"] != "run":
+            if name == "run" and data["kind"] not in RUN_KINDS:
                 break
             spec = data[name]
             argv = [str(compiler), str(source_copy), "-o", str(output)] if name == "compile" else [str(output)]
@@ -158,7 +182,16 @@ def execute_case(compiler: Path, manifest: Path, work_dir: Path, report_dir: Pat
                     text = normalize(getattr(observed, stream).decode("utf-8"), work)
                 except UnicodeDecodeError as error:
                     raise RuntimeError(f"{name}: {stream} is not UTF-8") from error
-                rule = spec.get(stream, {"exact": ""})
+                if name == "run" and data["kind"] == "run_fail" and stream == "stderr":
+                    failure = spec["failure"]
+                    expected_diagnostic = (f"{source_copy}:{failure['line']}:{failure['column']}: "
+                                           f"chtholly failure[{failure['category']}]\n")
+                    if text != normalize(expected_diagnostic, work):
+                        raise RuntimeError("run: language failure identity or location mismatch")
+                    result["run"]["language_failure"] = failure
+                    rule = spec.get(stream, {"exact": normalize(expected_diagnostic, work)})
+                else:
+                    rule = spec.get(stream, {"exact": ""})
                 if not matches(text, rule):
                     raise RuntimeError(f"{name}: {stream} mismatch")
             if name == "compile":
@@ -169,6 +202,13 @@ def execute_case(compiler: Path, manifest: Path, work_dir: Path, report_dir: Pat
                     raise RuntimeError("successful compilation produced no executable")
                 else:
                     result["output_sha256"] = hashlib.sha256(output.read_bytes()).hexdigest()
+                    runtime = compiler.parent / "lib/chtholly-runtime.lib"
+                    metadata = compiler.parent / "lib/chtholly-runtime.meta"
+                    if runtime.is_file() and metadata.is_file():
+                        result["runtime"] = {"archive_sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(),
+                                             "metadata": metadata.read_text(encoding="utf-8")}
+                    else:
+                        result["runtime"] = {"recorded": False, "reason": "compiler fixture has no runtime package"}
         result["status"] = "passed"
         code = 0
     except (ConfigurationError, OSError, ValueError) as error:

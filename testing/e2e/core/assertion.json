@@ -1,0 +1,6 @@
+{
+  "schema_version": 2, "name": "e2e.core.assertion", "kind": "run_fail",
+  "source": "assertion.cns", "basis": "B2-A31: false assertion has a distinct diagnostic category",
+  "compile": { "exit_code": 0 }, "run": { "exit_code": 120,
+    "failure": { "category": "Assertion", "file": "assertion.cns", "line": 2, "column": 5 } }
+}

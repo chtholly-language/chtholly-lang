@@ -18,17 +18,11 @@ Chtholly 有两个长期目标
 
 ## 当前进展
 
-Chtholly 是一个实验性的编译器实现，当前处于非常早期的 **Testing-And-Governance（R1）**阶段：
+Chtholly 是一个实验性的编译器实现，当前处于早期的 **R2 Primitive Types And Function（R3）**阶段：
 
-当前支持的程序为：
+具体进度可以见 docs/roadmap/roadmap.md 及 docs/design 文件夹
 
-```cns
-fn main() -> i32 {
-    return 0;
-}
-```
-
-源文件使用 `.cns`。
+其源文件使用 `.cns`。
 
 ## 开始使用
 

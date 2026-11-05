@@ -31,6 +31,15 @@ class CheckerTests(unittest.TestCase):
                     "arguments": ["clang-cl", "/c", str(source)]}
                    for source in (self.sources if sources is None else sources)]
         (self.build / "compile_commands.json").write_text(json.dumps(entries), encoding="utf-8")
+        target_database = self.build / "target-runtime/compile_commands.json"
+        target_database.parent.mkdir(exist_ok=True)
+        target_database.write_text(json.dumps([{"file": str(self.root / "out/external.c"),
+            "directory": str(self.root), "arguments": ["clang-cl", "/c", "external.c"]}]), encoding="utf-8")
+
+    def test_tidy_requires_target_runtime_database(self):
+        self.database()
+        (self.build / "target-runtime/compile_commands.json").unlink()
+        self.assertEqual(self.invoke(TIDY, self.response), 2)
 
     def invoke(self, module, response):
         arguments = ["checker", "--root", str(self.root), "--tool", str(self.root / "tool")]

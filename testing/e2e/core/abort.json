@@ -1,0 +1,5 @@
+{
+  "schema_version": 2, "name": "e2e.core.abort", "kind": "run_abort",
+  "source": "abort.cns", "basis": "B2-A24/A31: canonical abort terminates without a language diagnostic",
+  "compile": { "exit_code": 0 }, "run": { "exit_code": 121 }
+}
