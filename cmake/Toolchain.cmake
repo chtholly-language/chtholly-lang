@@ -32,7 +32,7 @@ separate_arguments(CHTHOLLY_LLVM_DEFINITIONS NATIVE_COMMAND "${LLVM_DEFINITIONS}
 
 # CMake-normalized paths use forward slashes; escape before embedding in C++.
 set(runtime_identity "")
-foreach(component IN ITEMS runtime/runtime.cpp runtime/include/Chtholly/Runtime/abi.h target/include/Chtholly/Target/target.h)
+foreach(component IN ITEMS runtime/runtime.cpp runtime/include/Chtholly/Runtime/abi.h target/include/Chtholly/Target/target.h types/include/Chtholly/Types/types.h)
   file(SHA256 "${PROJECT_SOURCE_DIR}/toolchain/${component}" component_hash)
   string(APPEND runtime_identity "${component_hash}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/toolchain/${component}")

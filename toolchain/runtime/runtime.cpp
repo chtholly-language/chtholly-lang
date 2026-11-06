@@ -9,7 +9,7 @@
 #include <windows.h>
 
 namespace Chtholly::Runtime {
-using Type = Target::Type;
+using Type = Target::Scalar;
 using U128 = unsigned __int128;
 using I128 = __int128;
 
@@ -26,6 +26,39 @@ double __floatuntidf(U128);
 namespace {
 using Error = FailureCode;
 using Op = CheckedOperation;
+auto DecodeScalar(std::uint32_t code) -> Type {
+  switch (static_cast<ScalarCode>(code)) {
+  case ScalarCode::I8:
+    return Type::I8;
+  case ScalarCode::I16:
+    return Type::I16;
+  case ScalarCode::I32:
+    return Type::I32;
+  case ScalarCode::I64:
+    return Type::I64;
+  case ScalarCode::I128:
+    return Type::I128;
+  case ScalarCode::U8:
+    return Type::U8;
+  case ScalarCode::U16:
+    return Type::U16;
+  case ScalarCode::U32:
+    return Type::U32;
+  case ScalarCode::U64:
+    return Type::U64;
+  case ScalarCode::U128:
+    return Type::U128;
+  case ScalarCode::ISize:
+    return Type::ISize;
+  case ScalarCode::USize:
+    return Type::USize;
+  case ScalarCode::F32:
+    return Type::F32;
+  case ScalarCode::F64:
+    return Type::F64;
+  }
+  return Type::Invalid;
+}
 auto Width(Type type) -> unsigned { return Target::WindowsX64.bits(type); }
 auto Signed(Type type) -> bool {
   return (type >= Type::I8 && type <= Type::I128) || type == Type::ISize;
@@ -289,7 +322,7 @@ auto Write(const char *bytes, std::size_t length) -> void {
   }
 }
 } // namespace
-extern "C" auto chtholly_runtime_abi_v2() -> void {}
+extern "C" auto chtholly_runtime_abi_v3() -> void {}
 extern "C" auto chtholly_runtime_initialize() -> void {
   // nearest ties-even, masked exceptions, gradual underflow, cleared flags.
   _mm_setcsr(0x1f80);
@@ -300,20 +333,20 @@ chtholly_runtime_checked(std::uint32_t operation, std::uint32_t sourceType,
                          std::uint64_t leftLow, std::uint64_t leftHigh,
                          std::uint64_t rightLow, std::uint64_t rightHigh,
                          Bits *result) -> std::uint32_t {
-  const auto source = static_cast<Type>(sourceType);
-  const auto destination = static_cast<Type>(resultType);
+  const auto source = DecodeScalar(sourceType);
+  const auto destination = DecodeScalar(resultType);
   const auto op = static_cast<Op>(operation);
   if (result == nullptr ||
       (op == Op::Convert ? (!Integer(source) && !Float(source)) ||
                                (!Integer(destination) && !Float(destination))
                          : !Integer(source) || source != destination ||
-                               !Integer(static_cast<Type>(rightType)))) {
+                               !Integer(DecodeScalar(rightType)))) {
     ExitProcess(122);
   }
   return static_cast<std::uint32_t>(
       op == Op::Convert
           ? Convert(Pack(leftLow, leftHigh), source, destination, result)
-          : Arithmetic(op, source, static_cast<Type>(rightType),
+          : Arithmetic(op, source, DecodeScalar(rightType),
                        Pack(leftLow, leftHigh), Pack(rightLow, rightHigh),
                        result));
 }
@@ -348,6 +381,9 @@ chtholly_runtime_fail(std::uint32_t category, const char *file,
     break;
   case 21:
     name = "Assertion";
+    break;
+  case static_cast<unsigned>(Error::IndexOutOfBounds):
+    name = "Index.OutOfBounds";
     break;
   default:
     ExitProcess(122);

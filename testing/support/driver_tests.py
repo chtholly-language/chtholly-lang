@@ -47,8 +47,9 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.execute("run-language-error"), 0)
         for mode in ("success", "run-wrong-category", "run-crash", "run-timeout", "run-sanitizer", "run-abort"):
             with self.subTest(mode=mode):
-                self.data["run"]["timeout_seconds"] = 0.2
+                self.data["run"]["timeout_seconds"] = 0.2 if mode == "run-timeout" else 5
                 self.assertEqual(self.execute(mode), 1)
+        self.data["run"]["timeout_seconds"] = 5
         self.data["run"]["failure"]["column"] = 4
         self.assertEqual(self.execute("run-language-error"), 1)
 
@@ -58,6 +59,19 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.execute("run-abort"), 0)
         self.assertEqual(self.execute("run-crash"), 1)
         self.assertEqual(self.execute("run-language-error"), 1)
+
+    def test_bounds_failure_identity_cannot_mask_process_errors(self):
+        self.data["kind"] = "run_fail"
+        self.data["run"] = {"exit_code": 120, "timeout_seconds": 5, "failure": {
+            "category": "Index.OutOfBounds", "file": "input.cns", "line": 2, "column": 3}}
+        self.assertEqual(self.execute("run-index-error"), 0)
+        for mode in ("run-language-error", "run-crash", "run-timeout", "run-sanitizer"):
+            with self.subTest(mode=mode):
+                self.data["run"]["timeout_seconds"] = 0.2 if mode == "run-timeout" else 5
+                self.assertEqual(self.execute(mode), 1)
+        self.data["run"]["timeout_seconds"] = 5
+        self.data["run"]["failure"]["column"] = 4
+        self.assertEqual(self.execute("run-index-error"), 1)
 
     def test_schema_two_rejects_legacy_and_invalid_failure_combinations(self):
         with self.assertRaises(ConfigurationError):

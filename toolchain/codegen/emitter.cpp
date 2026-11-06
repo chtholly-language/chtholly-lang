@@ -2,19 +2,65 @@
 #include "emitter.h"
 #include <Chtholly/CodeGen/codegen.h>
 #include <Chtholly/Runtime/abi.h>
+#include <Chtholly/Target/layout.h>
 
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
 
+#include <algorithm>
 #include <array>
 #include <stdexcept>
 
 namespace Chtholly::CodeGen {
 namespace {
-using Type = Target::Type;
+using Type = Types::TypeId;
 using Id = IR::Id;
 using O = Numeric::Operation;
+auto BuildLayouts(const IR::Draft &program) -> Target::Layouts {
+  std::string error;
+  auto layouts = Target::Layouts::Build(*program.Types, error, program.Target);
+  if (!layouts) {
+    throw std::logic_error(error);
+  }
+  return *layouts;
+}
+auto WireType(Type type) -> unsigned {
+  using Wire = Runtime::ScalarCode;
+  switch (type.primitive()) {
+  case Types::Primitive::I8:
+    return static_cast<unsigned>(Wire::I8);
+  case Types::Primitive::I16:
+    return static_cast<unsigned>(Wire::I16);
+  case Types::Primitive::I32:
+    return static_cast<unsigned>(Wire::I32);
+  case Types::Primitive::I64:
+    return static_cast<unsigned>(Wire::I64);
+  case Types::Primitive::I128:
+    return static_cast<unsigned>(Wire::I128);
+  case Types::Primitive::U8:
+    return static_cast<unsigned>(Wire::U8);
+  case Types::Primitive::U16:
+    return static_cast<unsigned>(Wire::U16);
+  case Types::Primitive::U32:
+    return static_cast<unsigned>(Wire::U32);
+  case Types::Primitive::U64:
+    return static_cast<unsigned>(Wire::U64);
+  case Types::Primitive::U128:
+    return static_cast<unsigned>(Wire::U128);
+  case Types::Primitive::ISize:
+    return static_cast<unsigned>(Wire::ISize);
+  case Types::Primitive::USize:
+    return static_cast<unsigned>(Wire::USize);
+  case Types::Primitive::F32:
+    return static_cast<unsigned>(Wire::F32);
+  case Types::Primitive::F64:
+    return static_cast<unsigned>(Wire::F64);
+  default:
+    throw std::logic_error(
+        "non-numeric type used by runtime numeric operation");
+  }
+}
 static_assert([] {
   const std::pair<Numeric::Failure, Runtime::FailureCode> categories[] = {
       {Numeric::Failure::None, Runtime::FailureCode::None},
@@ -75,7 +121,8 @@ auto EmissionOrder(const IR::Function &function) -> std::vector<Id> {
     unsigned successors = 0;
     if (end.Kind == IR::Exit::Jump) {
       successors = 1;
-    } else if (end.Kind == IR::Exit::Branch || end.Kind == IR::Exit::Checked) {
+    } else if (end.Kind == IR::Exit::Branch || end.Kind == IR::Exit::Checked ||
+               end.Kind == IR::Exit::Bounds || end.Kind == IR::Exit::Variant) {
       successors = 2;
     }
     if (visit.NextSuccessor == successors) {
@@ -96,7 +143,7 @@ class Emitter {
 public:
   Emitter(const IR::Draft &program, llvm::Module &module)
       : Program(program), Module(module), Context(module.getContext()),
-        Builder(Context) {
+        Builder(Context), Layout(BuildLayouts(program)) {
     Builder.setIsFPConstrained(true);
     Builder.setDefaultConstrainedRounding(
         llvm::RoundingMode::NearestTiesToEven);
@@ -134,37 +181,51 @@ public:
         continue;
       }
       std::vector<llvm::Type *> parameters;
-      if (wide(function.ReturnType)) {
+      if (wide(function.ReturnType) || Layout.indirect(function.ReturnType)) {
         parameters.push_back(pointer);
       }
       for (const auto &parameter : function.Parameters) {
-        if (parameter.ValueType == Type::Unit) {
+        if (!payload(parameter.ValueType)) {
           continue;
         }
-        if (wide(parameter.ValueType)) {
+        if (Layout.indirect(parameter.ValueType)) {
+          parameters.push_back(pointer);
+        } else if (wide(parameter.ValueType)) {
           parameters.push_back(Builder.getInt64Ty());
           parameters.push_back(Builder.getInt64Ty());
         } else {
           parameters.push_back(abiType(parameter.ValueType));
         }
       }
-      const auto result = wide(function.ReturnType) ||
-                                  function.ReturnType == Type::Unit ||
-                                  function.ReturnType == Type::Never
-                              ? Builder.getVoidTy()
-                              : abiType(function.ReturnType);
+      const bool indirectResult =
+          wide(function.ReturnType) || Layout.indirect(function.ReturnType) ||
+          !payload(function.ReturnType) ||
+          !Program.Types->inhabited(function.ReturnType);
+      const auto result =
+          indirectResult ? Builder.getVoidTy() : abiType(function.ReturnType);
       auto *generated = llvm::Function::Create(
           llvm::FunctionType::get(result, parameters, false),
           llvm::GlobalValue::ExternalLinkage, FunctionSymbol(i), Module);
       generated->setCallingConv(llvm::CallingConv::C);
       generated->addFnAttr(llvm::Attribute::StrictFP);
-      if (function.ReturnType == Type::Never) {
+      if (!Program.Types->inhabited(function.ReturnType)) {
         generated->addFnAttr(llvm::Attribute::NoReturn);
       }
       Functions.push_back(generated);
     }
+    for (std::uint32_t i = 0; i < Program.Types->records().size(); ++i) {
+      CopyFunctions.push_back(llvm::Function::Create(
+          llvm::FunctionType::get(Builder.getVoidTy(), {pointer, pointer},
+                                  false),
+          llvm::GlobalValue::InternalLinkage,
+          "__chtholly_transfer_" + std::to_string(i), Module));
+      CopyFunctions.back()->addFnAttr(llvm::Attribute::NoUnwind);
+    }
   }
   auto run(bool nativeEntry) -> void {
+    for (std::uint32_t i = 0; i < CopyFunctions.size(); ++i) {
+      copyHelper(Program.Types->id(i), *CopyFunctions[i]);
+    }
     for (Id i = 0; i < Program.Functions.size(); ++i) {
       if (Functions[i]) {
         function(Program.Functions[i], *Functions[i]);
@@ -176,7 +237,7 @@ public:
           llvm::GlobalValue::ExternalLinkage, "main", Module);
       Builder.SetInsertPoint(llvm::BasicBlock::Create(Context, "entry", entry));
       Builder.CreateCall(Module.getOrInsertFunction(
-          "chtholly_runtime_abi_v2",
+          "chtholly_runtime_abi_v3",
           llvm::FunctionType::get(Builder.getVoidTy(), false)));
       Builder.CreateCall(Module.getOrInsertFunction(
           "chtholly_runtime_initialize",
@@ -190,6 +251,9 @@ private:
     return Program.Target.bits(type) == 128;
   }
   auto valueType(Type type) -> llvm::Type * {
+    if (type.owner() != nullptr) {
+      return Builder.getPtrTy();
+    }
     if (type == Type::F32) {
       return Builder.getFloatTy();
     }
@@ -200,6 +264,162 @@ private:
       return Builder.getVoidTy();
     }
     return llvm::IntegerType::get(Context, Program.Target.bits(type));
+  }
+  auto payload(Type type) const -> bool { return Layout.get(type).Size != 0; }
+  auto offset(llvm::Value *base, std::uint64_t bytes) -> llvm::Value * {
+    return bytes == 0 ? base
+                      : Builder.CreateGEP(Builder.getInt8Ty(), base,
+                                          Builder.getInt64(bytes));
+  }
+  auto loadScalar(Type type, llvm::Value *address) -> llvm::Value * {
+    if (!payload(type)) {
+      return nullptr;
+    }
+    if (type == Type::Bool) {
+      auto *load = Builder.CreateAlignedLoad(Builder.getInt8Ty(), address,
+                                             llvm::Align(1));
+      return Builder.CreateTrunc(load, Builder.getInt1Ty());
+    }
+    return Builder.CreateAlignedLoad(valueType(type), address,
+                                     llvm::Align(Layout.get(type).Alignment));
+  }
+  auto storeScalar(Type type, llvm::Value *value,
+                   llvm::Value *address) -> void {
+    if (!payload(type)) {
+      return;
+    }
+    if (type == Type::Bool) {
+      value = Builder.CreateZExt(value, Builder.getInt8Ty());
+    }
+    Builder.CreateAlignedStore(value, address,
+                               llvm::Align(Layout.get(type).Alignment));
+  }
+  auto copyValue(Type type, llvm::Value *destination,
+                 llvm::Value *source) -> void {
+    if (!payload(type)) {
+      return;
+    }
+    if (type.owner() == nullptr) {
+      storeScalar(type, loadScalar(type, source), destination);
+    } else {
+      const auto index =
+          type.index() - static_cast<unsigned>(Types::Primitive::Never) - 1;
+      Builder.CreateCall(CopyFunctions.at(index), {destination, source});
+    }
+  }
+  template <typename Body>
+  auto arrayLoop(std::uint64_t count, Body body) -> void {
+    if (count == 0) {
+      return;
+    }
+    auto *function = Builder.GetInsertBlock()->getParent();
+    auto *before = Builder.GetInsertBlock();
+    auto *header = llvm::BasicBlock::Create(Context, "array.header", function);
+    auto *element =
+        llvm::BasicBlock::Create(Context, "array.element", function);
+    auto *done = llvm::BasicBlock::Create(Context, "array.done", function);
+    Builder.CreateBr(header);
+    Builder.SetInsertPoint(header);
+    auto *index = Builder.CreatePHI(Builder.getInt64Ty(), 2);
+    index->addIncoming(Builder.getInt64(0), before);
+    Builder.CreateCondBr(Builder.CreateICmpULT(index, Builder.getInt64(count)),
+                         element, done);
+    Builder.SetInsertPoint(element);
+    body(index);
+    auto *next = Builder.CreateAdd(index, Builder.getInt64(1));
+    index->addIncoming(next, Builder.GetInsertBlock());
+    Builder.CreateBr(header);
+    Builder.SetInsertPoint(done);
+  }
+  auto copyHelper(Type type, llvm::Function &function) -> void {
+    Builder.SetInsertPoint(
+        llvm::BasicBlock::Create(Context, "entry", &function));
+    if (!Program.Types->inhabited(type) || !payload(type)) {
+      Builder.CreateRetVoid();
+      return;
+    }
+    auto argument = function.arg_begin();
+    auto *destination = &*argument++;
+    auto *source = &*argument;
+    const auto &record = Program.Types->get(type);
+    const auto layout = Layout.get(type);
+    const auto fields = [&](const std::vector<Types::Field> &members,
+                            const Target::ObjectLayout &shape, llvm::Value *to,
+                            llvm::Value *from) {
+      for (std::size_t i = 0; i < members.size(); ++i) {
+        copyValue(members[i].Type, offset(to, shape.Fields[i]),
+                  offset(from, shape.Fields[i]));
+      }
+    };
+    if (record.Form == Types::Kind::Array) {
+      const auto element = Layout.get(record.Element);
+      if (element.Size != 0) {
+        arrayLoop(record.Length, [&](llvm::Value *index) {
+          auto *bytes =
+              Builder.CreateMul(index, Builder.getInt64(element.Stride));
+          copyValue(record.Element,
+                    Builder.CreateGEP(Builder.getInt8Ty(), destination, bytes),
+                    Builder.CreateGEP(Builder.getInt8Ty(), source, bytes));
+        });
+      }
+    } else if (record.Form == Types::Kind::Enum) {
+      auto *tagType = Builder.getIntNTy(layout.TagBits);
+      auto *tag = Builder.CreateAlignedLoad(tagType, source,
+                                            llvm::Align(layout.TagBits / 8));
+      Builder.CreateAlignedStore(tag, destination,
+                                 llvm::Align(layout.TagBits / 8));
+      auto *invalid =
+          llvm::BasicBlock::Create(Context, "invalid.tag", &function);
+      auto *done = llvm::BasicBlock::Create(Context, "payload.done", &function);
+      auto *dispatch = Builder.CreateSwitch(tag, invalid);
+      for (Id variant = 0; variant < record.Variants.size(); ++variant) {
+        if (!record.Variants[variant].Inhabited) {
+          continue;
+        }
+        auto *block = llvm::BasicBlock::Create(Context, "payload", &function);
+        dispatch->addCase(llvm::ConstantInt::get(tagType, variant), block);
+        Builder.SetInsertPoint(block);
+        fields(record.Variants[variant].Fields, layout.Variants[variant],
+               offset(destination, layout.PayloadOffset),
+               offset(source, layout.PayloadOffset));
+        Builder.CreateBr(done);
+      }
+      Builder.SetInsertPoint(invalid);
+      Builder.CreateUnreachable();
+      Builder.SetInsertPoint(done);
+    } else {
+      fields(record.Fields, layout, destination, source);
+    }
+    Builder.CreateRetVoid();
+  }
+  auto placeAddress(Id id) -> llvm::Value * {
+    const auto &place = Current->Places.at(id);
+    if (place.Form == IR::Projection::Root) {
+      return place.Local != IR::None ? LocalAddresses[place.Local]
+                                     : Values[place.ValueOwner];
+    }
+    auto *base = placeAddress(place.Parent);
+    const auto parentType = Current->Places[place.Parent].ValueType;
+    const auto layout = Layout.get(parentType);
+    if (place.Form == IR::Projection::Field) {
+      return offset(base,
+                    layout.Fields.at(static_cast<std::size_t>(place.Index)));
+    }
+    if (place.Form == IR::Projection::VariantField) {
+      return offset(base, layout.PayloadOffset +
+                              layout.Variants[place.Variant].Fields.at(
+                                  static_cast<std::size_t>(place.Index)));
+    }
+    const auto stride = Layout.get(place.ValueType).Stride;
+    if (stride == 0) {
+      return base;
+    }
+    if (place.Form == IR::Projection::Element) {
+      return offset(base, place.Index * stride);
+    }
+    return Builder.CreateGEP(
+        Builder.getInt8Ty(), base,
+        Builder.CreateMul(Values[place.IndexValue], Builder.getInt64(stride)));
   }
   auto abiType(Type type) -> llvm::Type * {
     if (type == Type::Bool) {
@@ -270,13 +490,34 @@ private:
   auto addEdge(const IR::Edge &edge, llvm::BasicBlock *from,
                llvm::Value *implicit = nullptr) -> void {
     const auto &parameters = Current->Blocks[edge.Target].Parameters;
+    std::vector<std::pair<Id, llvm::Value *>> aggregateTransfers;
     for (std::size_t i = 0; i < parameters.size(); ++i) {
-      if (Current->Values[parameters[i]] == Type::Unit) {
+      const auto type = Current->Values[parameters[i]];
+      if (!payload(type)) {
+        continue;
+      }
+      if (type.owner() != nullptr) {
+        if (implicit) {
+          throw std::logic_error("aggregate result on a scalar checked edge");
+        }
+        // A pointer PHI would alias a producer's reusable loop storage. Take
+        // snapshots first, then install every destination, so carried values
+        // stay independent and parallel swaps do not overwrite their source.
+        llvm::IRBuilder<> allocation(&Blocks[0]->front());
+        const auto shape = Layout.get(type);
+        auto *snapshot = allocation.CreateAlloca(
+            allocation.getInt8Ty(), allocation.getInt64(shape.Size));
+        snapshot->setAlignment(llvm::Align(shape.Alignment));
+        copyValue(type, snapshot, Values[edge.Arguments.at(i)]);
+        aggregateTransfers.push_back({parameters[i], snapshot});
         continue;
       }
       auto *phi = llvm::cast<llvm::PHINode>(Values[parameters[i]]);
       phi->addIncoming(implicit ? implicit : Values[edge.Arguments.at(i)],
                        from);
+    }
+    for (const auto &[parameter, snapshot] : aggregateTransfers) {
+      copyValue(Current->Values[parameter], ValueStorage[parameter], snapshot);
     }
   }
   auto unchecked(O op, llvm::Value *left, llvm::Value *right,
@@ -345,14 +586,18 @@ private:
     Builder.SetInsertPoint(Blocks[0]);
     auto argument = output.arg_begin();
     llvm::Value *returnAddress =
-        wide(input.ReturnType) ? &*argument++ : nullptr;
+        wide(input.ReturnType) || Layout.indirect(input.ReturnType)
+            ? &*argument++
+            : nullptr;
     for (std::size_t p = 0; p < input.Parameters.size(); ++p) {
       const auto type = input.Parameters[p].ValueType;
       const auto value = input.Blocks[0].Parameters[p];
-      if (type == Type::Unit) {
+      if (!payload(type)) {
         continue;
       }
-      if (wide(type)) {
+      if (Layout.indirect(type)) {
+        Values[value] = &*argument++;
+      } else if (wide(type)) {
         auto *low = &*argument++;
         auto *high = &*argument++;
         Values[value] = fromWords(low, high, type);
@@ -360,18 +605,40 @@ private:
         Values[value] = fromABI(&*argument++, type);
       }
     }
-    std::vector<llvm::Value *> locals;
+    LocalAddresses.clear();
     for (const auto type : input.Locals) {
-      locals.push_back(type == Type::Unit || type == Type::Never
-                           ? nullptr
-                           : Builder.CreateAlloca(valueType(type)));
+      if (!Program.Types->inhabited(type) || !payload(type)) {
+        LocalAddresses.push_back(nullptr);
+        continue;
+      }
+      const auto shape = Layout.get(type);
+      auto *allocation = Builder.CreateAlloca(
+          Builder.getInt8Ty(),
+          Builder.getInt64(std::max<std::uint64_t>(shape.Size, 1)));
+      allocation->setAlignment(llvm::Align(shape.Alignment));
+      LocalAddresses.push_back(allocation);
+    }
+    ValueStorage.assign(input.Values.size(), nullptr);
+    for (Id value = 0; value < input.Values.size(); ++value) {
+      if (input.Values[value].owner() == nullptr ||
+          !payload(input.Values[value])) {
+        continue;
+      }
+      const auto shape = Layout.get(input.Values[value]);
+      auto *allocation = Builder.CreateAlloca(Builder.getInt8Ty(),
+                                              Builder.getInt64(shape.Size));
+      allocation->setAlignment(llvm::Align(shape.Alignment));
+      ValueStorage[value] = allocation;
     }
     auto *scratch = Builder.CreateAlloca(Bits);
     for (std::size_t b = 1; b < input.Blocks.size(); ++b) {
       Builder.SetInsertPoint(Blocks[b]);
       for (const auto value : input.Blocks[b].Parameters) {
-        if (input.Values[value] != Type::Unit) {
-          Values[value] = Builder.CreatePHI(valueType(input.Values[value]), 2);
+        if (payload(input.Values[value])) {
+          Values[value] =
+              input.Values[value].owner() != nullptr
+                  ? ValueStorage[value]
+                  : Builder.CreatePHI(valueType(input.Values[value]), 2);
         }
       }
     }
@@ -384,8 +651,8 @@ private:
         llvm::Value *result = nullptr;
         switch (instruction.Code) {
         case IR::Opcode::Constant: {
-          const auto type = instruction.Constant->type();
-          if (type != Type::Unit) {
+          const auto type = Target::SourceType(instruction.Constant->type());
+          if (payload(type)) {
             const auto words = instruction.Constant->bits();
             const llvm::APInt bits(Program.Target.bits(type),
                                    llvm::ArrayRef<std::uint64_t>(
@@ -403,18 +670,94 @@ private:
           break;
         }
         case IR::Opcode::Load:
-          if (locals[instruction.Entity]) {
-            result =
-                Builder.CreateLoad(valueType(input.Locals[instruction.Entity]),
-                                   locals[instruction.Entity]);
+        case IR::Opcode::Move:
+        case IR::Opcode::Observe: {
+          const auto type = input.Places[instruction.Entity].ValueType;
+          if (type.owner() != nullptr) {
+            result = ValueStorage[instruction.Result];
+            copyValue(type, result, placeAddress(instruction.Entity));
+          } else {
+            result = loadScalar(type, placeAddress(instruction.Entity));
           }
           break;
-        case IR::Opcode::Store:
-          if (locals[instruction.Entity]) {
-            Builder.CreateStore(Values[instruction.Operands[0]],
-                                locals[instruction.Entity]);
+        }
+        case IR::Opcode::Store: {
+          const auto type = input.Places[instruction.Entity].ValueType;
+          if (type.owner() != nullptr) {
+            copyValue(type, placeAddress(instruction.Entity),
+                      Values[instruction.Operands[0]]);
+          } else {
+            storeScalar(type, Values[instruction.Operands[0]],
+                        placeAddress(instruction.Entity));
           }
           break;
+        }
+        case IR::Opcode::Live:
+        case IR::Opcode::Dead:
+        case IR::Opcode::Protect:
+        case IR::Opcode::Unprotect:
+        case IR::Opcode::Locate:
+        case IR::Opcode::EndValue:
+        case IR::Opcode::EndBindings:
+          break;
+        case IR::Opcode::Construct:
+        case IR::Opcode::Repeat: {
+          const auto type = input.Values[instruction.Result];
+          const auto &record = Program.Types->get(type);
+          const auto layout = Layout.get(type);
+          result = ValueStorage[instruction.Result];
+          if (!payload(type)) {
+            break;
+          }
+          const auto install = [&](Type fieldType, llvm::Value *to, Id value) {
+            if (fieldType.owner() != nullptr) {
+              copyValue(fieldType, to, Values[value]);
+            } else {
+              storeScalar(fieldType, Values[value], to);
+            }
+          };
+          if (record.Form == Types::Kind::Array) {
+            const auto element = Layout.get(record.Element);
+            if (element.Size == 0) {
+              break;
+            }
+            if (instruction.Code == IR::Opcode::Repeat) {
+              arrayLoop(record.Length, [&](llvm::Value *index) {
+                auto *to = Builder.CreateGEP(
+                    Builder.getInt8Ty(), result,
+                    Builder.CreateMul(index, Builder.getInt64(element.Stride)));
+                install(record.Element, to, instruction.Operands[0]);
+              });
+            } else {
+              for (std::size_t i = 0; i < instruction.Operands.size(); ++i) {
+                install(record.Element, offset(result, i * element.Stride),
+                        instruction.Operands[i]);
+              }
+            }
+          } else {
+            const auto &fields =
+                record.Form == Types::Kind::Enum
+                    ? record.Variants[instruction.Entity].Fields
+                    : record.Fields;
+            const auto &shape = record.Form == Types::Kind::Enum
+                                    ? layout.Variants[instruction.Entity]
+                                    : layout;
+            const auto prefix =
+                record.Form == Types::Kind::Enum ? layout.PayloadOffset : 0;
+            if (record.Form == Types::Kind::Enum) {
+              Builder.CreateAlignedStore(
+                  Builder.getIntN(layout.TagBits, instruction.Entity), result,
+                  llvm::Align(layout.TagBits / 8));
+            }
+            for (std::size_t i = 0; i < instruction.Operands.size(); ++i) {
+              const auto field = instruction.Slots[i];
+              install(fields[field].Type,
+                      offset(result, prefix + shape.Fields[field]),
+                      instruction.Operands[i]);
+            }
+          }
+          break;
+        }
         case IR::Opcode::Unary:
         case IR::Opcode::Binary:
           result =
@@ -427,16 +770,20 @@ private:
         case IR::Opcode::Call: {
           const auto &callee = Program.Functions[instruction.Entity];
           std::vector<llvm::Value *> arguments;
-          if (wide(callee.ReturnType)) {
+          if (Layout.indirect(callee.ReturnType)) {
+            arguments.push_back(ValueStorage[instruction.Result]);
+          } else if (wide(callee.ReturnType)) {
             arguments.push_back(scratch);
           }
           for (std::size_t p = 0; p < instruction.Operands.size(); ++p) {
             const auto type = callee.Parameters[p].ValueType;
             auto *value = Values[instruction.Operands[p]];
-            if (type == Type::Unit) {
+            if (!payload(type)) {
               continue;
             }
-            if (wide(type)) {
+            if (Layout.indirect(type)) {
+              arguments.push_back(value);
+            } else if (wide(type)) {
               const auto [low, high] = words(value, type);
               arguments.push_back(low);
               arguments.push_back(high);
@@ -446,10 +793,12 @@ private:
           }
           auto *call =
               Builder.CreateCall(Functions[instruction.Entity], arguments);
-          if (wide(callee.ReturnType)) {
+          if (Layout.indirect(callee.ReturnType)) {
+            result = ValueStorage[instruction.Result];
+          } else if (wide(callee.ReturnType)) {
             result = readBits(scratch, callee.ReturnType);
-          } else if (callee.ReturnType != Type::Unit &&
-                     callee.ReturnType != Type::Never) {
+          } else if (payload(callee.ReturnType) &&
+                     Program.Types->inhabited(callee.ReturnType)) {
             result = fromABI(call, callee.ReturnType);
           }
           break;
@@ -461,32 +810,69 @@ private:
       }
       const auto &end = input.Blocks[b].End;
       switch (end.Kind) {
+      case IR::Exit::Variant: {
+        const auto layout = Layout.get(input.Places[end.Place].ValueType);
+        auto *tag = Builder.CreateAlignedLoad(Builder.getIntNTy(layout.TagBits),
+                                              placeAddress(end.Place),
+                                              llvm::Align(layout.TagBits / 8));
+        auto *condition = Builder.CreateICmpEQ(
+            tag, Builder.getIntN(layout.TagBits, end.Variant));
+        auto *first = llvm::BasicBlock::Create(Context, "variant.yes", &output);
+        auto *second = llvm::BasicBlock::Create(Context, "variant.no", &output);
+        Builder.CreateCondBr(condition, first, second);
+        Builder.SetInsertPoint(first);
+        addEdge(end.First, first);
+        Builder.CreateBr(Blocks[end.First.Target]);
+        Builder.SetInsertPoint(second);
+        addEdge(end.Second, second);
+        Builder.CreateBr(Blocks[end.Second.Target]);
+        break;
+      }
+      case IR::Exit::Bounds: {
+        auto *index = Values[end.Operands[0]];
+        const auto type = input.Values[end.Operands[0]];
+        const auto width = Program.Target.bits(type);
+        const auto checkedWidth = std::max(width, 64U);
+        auto *extended =
+            Builder.CreateZExtOrTrunc(index, Builder.getIntNTy(checkedWidth));
+        auto *valid = Builder.CreateICmpULT(
+            extended, Builder.getIntN(checkedWidth, end.Count));
+        if (Types::IsSigned(type)) {
+          valid = Builder.CreateAnd(
+              valid, Builder.CreateICmpSGE(
+                         index, llvm::ConstantInt::get(index->getType(), 0)));
+        }
+        auto *normalized =
+            Builder.CreateZExtOrTrunc(index, Builder.getInt64Ty());
+        addEdge(end.First, Builder.GetInsertBlock(), normalized);
+        addEdge(end.Second, Builder.GetInsertBlock(),
+                Builder.getInt32(static_cast<unsigned>(
+                    Runtime::FailureCode::IndexOutOfBounds)));
+        Builder.CreateCondBr(valid, Blocks[end.First.Target],
+                             Blocks[end.Second.Target]);
+        break;
+      }
       case IR::Exit::Jump:
         addEdge(end.First, Builder.GetInsertBlock());
         Builder.CreateBr(Blocks[end.First.Target]);
         break;
-      case IR::Exit::Branch:
-        if (end.First.Target == end.Second.Target) {
-          // LLVM PHIs distinguish predecessor blocks, not parallel edges.
-          // Give each edge its own predecessor so its arguments stay distinct.
-          auto *first =
-              llvm::BasicBlock::Create(Context, "branch.true", &output);
-          auto *second =
-              llvm::BasicBlock::Create(Context, "branch.false", &output);
-          Builder.CreateCondBr(Values[end.Operands[0]], first, second);
-          Builder.SetInsertPoint(first);
-          addEdge(end.First, first);
-          Builder.CreateBr(Blocks[end.First.Target]);
-          Builder.SetInsertPoint(second);
-          addEdge(end.Second, second);
-          Builder.CreateBr(Blocks[end.Second.Target]);
-          break;
-        }
-        addEdge(end.First, Builder.GetInsertBlock());
-        addEdge(end.Second, Builder.GetInsertBlock());
-        Builder.CreateCondBr(Values[end.Operands[0]], Blocks[end.First.Target],
-                             Blocks[end.Second.Target]);
+      case IR::Exit::Branch: {
+        // Edge transfers write owned aggregate storage. Running both before
+        // the branch could overwrite a loop-carried source needed only by the
+        // other edge. Give every edge its own block, including distinct target
+        // blocks. This also distinguishes parallel scalar PHI inputs.
+        auto *first = llvm::BasicBlock::Create(Context, "branch.true", &output);
+        auto *second =
+            llvm::BasicBlock::Create(Context, "branch.false", &output);
+        Builder.CreateCondBr(Values[end.Operands[0]], first, second);
+        Builder.SetInsertPoint(first);
+        addEdge(end.First, first);
+        Builder.CreateBr(Blocks[end.First.Target]);
+        Builder.SetInsertPoint(second);
+        addEdge(end.Second, second);
+        Builder.CreateBr(Blocks[end.Second.Target]);
         break;
+      }
       case IR::Exit::Checked: {
         const auto leftType = input.Values[end.Operands[0]];
         const auto rightType =
@@ -504,10 +890,10 @@ private:
                  end.Conversion
                      ? static_cast<unsigned>(Runtime::CheckedOperation::Convert)
                      : OperationCode(end.Operation)),
-             Builder.getInt32(static_cast<unsigned>(leftType)),
-             Builder.getInt32(static_cast<unsigned>(end.ResultType)),
-             Builder.getInt32(static_cast<unsigned>(rightType)), leftLow,
-             leftHigh, rightLow, rightHigh, scratch});
+             Builder.getInt32(WireType(leftType)),
+             Builder.getInt32(WireType(end.ResultType)),
+             Builder.getInt32(WireType(rightType)), leftLow, leftHigh, rightLow,
+             rightHigh, scratch});
         auto *success =
             llvm::BasicBlock::Create(Context, "checked.success", &output);
         addEdge(end.Second, Builder.GetInsertBlock(), status);
@@ -520,10 +906,13 @@ private:
         break;
       }
       case IR::Exit::Return:
-        if (wide(input.ReturnType)) {
+        if (Layout.indirect(input.ReturnType)) {
+          copyValue(input.ReturnType, returnAddress, Values[end.Operands[0]]);
+          Builder.CreateRetVoid();
+        } else if (wide(input.ReturnType)) {
           writeBits(returnAddress, Values[end.Operands[0]], input.ReturnType);
           Builder.CreateRetVoid();
-        } else if (input.ReturnType == Type::Unit) {
+        } else if (!payload(input.ReturnType)) {
           Builder.CreateRetVoid();
         } else {
           Builder.CreateRet(toABI(Values[end.Operands[0]], input.ReturnType));
@@ -559,6 +948,7 @@ private:
   llvm::Module &Module;
   llvm::LLVMContext &Context;
   llvm::IRBuilder<> Builder;
+  Target::Layouts Layout;
   llvm::StructType *Bits = nullptr;
   llvm::Value *FileName = nullptr;
   llvm::FunctionCallee Checked, Failure, Abort;
@@ -566,6 +956,9 @@ private:
   const IR::Function *Current = nullptr;
   std::vector<llvm::Value *> Values;
   std::vector<llvm::BasicBlock *> Blocks;
+  std::vector<llvm::Function *> CopyFunctions;
+  std::vector<llvm::Value *> LocalAddresses;
+  std::vector<llvm::Value *> ValueStorage;
 };
 } // namespace
 auto EmitModule(const IR::Draft &program, llvm::Module &module,

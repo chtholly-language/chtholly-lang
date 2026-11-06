@@ -3,6 +3,7 @@
 
 #include "emission.h"
 #include "emitter.h"
+#include <Chtholly/Flow/flow.h>
 
 #include <Chtholly/Diagnostic/diagnostic.h>
 
@@ -22,8 +23,8 @@ auto FunctionSymbol(unsigned function) -> std::string {
   return "__chtholly_fn_" + std::to_string(function);
 }
 
-auto EmitObjectFile(const IR::Program &program, std::string_view path,
-                    Diagnostic::Diagnostics &diagnostics,
+auto EmitObjectFile(const Flow::InitializationCheckedView &program,
+                    std::string_view path, Diagnostic::Diagnostics &diagnostics,
                     bool nativeEntry) -> bool {
   static const bool initialized = [] {
     return !llvm::InitializeNativeTarget() &&
@@ -60,8 +61,9 @@ auto EmitObjectFile(const IR::Program &program, std::string_view path,
                       "LLVM data layout disagrees with target description");
     return false;
   }
-  for (auto type : {Target::Type::I8, Target::Type::I16, Target::Type::I32,
-                    Target::Type::I64, Target::Type::I128}) {
+  for (auto type :
+       {Target::Scalar::I8, Target::Scalar::I16, Target::Scalar::I32,
+        Target::Scalar::I64, Target::Scalar::I128}) {
     auto *integerType =
         llvm::IntegerType::get(context, input.Target.bits(type));
     if (layout.getABITypeAlign(integerType).value() !=
@@ -106,7 +108,8 @@ auto EmitObjectFile(const IR::Program &program, std::string_view path,
   }
   return true;
 }
-auto EmitObject(const IR::Program &program, std::string_view path,
+auto EmitObject(const Flow::InitializationCheckedView &program,
+                std::string_view path,
                 Diagnostic::Diagnostics &diagnostics) -> bool {
   return EmitObjectFile(program, path, diagnostics, true);
 }

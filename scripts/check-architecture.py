@@ -107,7 +107,8 @@ def inspect_runtime(root, build):
     if (properties["compiler"], properties["version"], properties["pointer_bytes"], properties["crt"]) != (
             "Clang", "18.1.8", "8", "MultiThreadedDLL"):
         raise ValueError("target runtime toolchain or CRT mismatch")
-    allowed_includes = {(root / "toolchain/runtime/include").resolve(), (root / "toolchain/target/include").resolve()}
+    allowed_includes = {(root / "toolchain/runtime/include").resolve(), (root / "toolchain/target/include").resolve(),
+                        (root / "toolchain/types/include").resolve()}
     if {Path(item).resolve() for item in properties["includes"].split(";") if item} != allowed_includes:
         raise ValueError("target runtime has undeclared include directories")
     if "sanitize" in properties["options"].lower():

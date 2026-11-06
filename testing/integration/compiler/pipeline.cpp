@@ -27,7 +27,7 @@ TEST(frontend, uninhabited_function_has_no_body) {
   ASSERT_TRUE(checked);
   const auto execution = Lower::Lower(*checked, diagnostics);
   ASSERT_TRUE(execution);
-  EXPECT_EQ(execution->storage().Functions[0].ReturnType, Target::Type::I32);
+  EXPECT_EQ(execution->storage().Functions[0].ReturnType, Types::TypeId::I32);
   EXPECT_FALSE(execution->storage().Functions[0].HasNormalEntry);
   EXPECT_TRUE(execution->storage().Functions[0].Blocks.empty());
 }

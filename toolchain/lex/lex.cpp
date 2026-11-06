@@ -31,20 +31,36 @@ auto Digit(unsigned char c) -> unsigned {
 
 auto Keyword(std::string_view word) -> TokenKind {
   constexpr std::pair<std::string_view, TokenKind> Supported[] = {
-      {"fn", TokenKind::Fn},      {"return", TokenKind::Return},
-      {"let", TokenKind::Let},    {"var", TokenKind::Var},
-      {"if", TokenKind::If},      {"else", TokenKind::Else},
-      {"as", TokenKind::As},      {"true", TokenKind::True},
-      {"false", TokenKind::False}};
+      {"fn", TokenKind::Fn},
+      {"return", TokenKind::Return},
+      {"let", TokenKind::Let},
+      {"var", TokenKind::Var},
+      {"if", TokenKind::If},
+      {"else", TokenKind::Else},
+      {"as", TokenKind::As},
+      {"true", TokenKind::True},
+      {"false", TokenKind::False},
+      {"struct", TokenKind::Struct},
+      {"enum", TokenKind::Enum},
+      {"alias", TokenKind::Alias},
+      {"const", TokenKind::Const},
+      {"impl", TokenKind::Impl},
+      {"for", TokenKind::For},
+      {"pub", TokenKind::Pub},
+      {"copy", TokenKind::Copy},
+      {"move", TokenKind::Move},
+      {"match", TokenKind::Match},
+      {"while", TokenKind::While},
+      {"loop", TokenKind::Loop},
+      {"break", TokenKind::Break},
+      {"continue", TokenKind::Continue}};
   for (const auto &[spelling, kind] : Supported) {
     if (word == spelling) {
       return kind;
     }
   }
   constexpr std::array Unsupported = {
-      "struct", "enum",     "module", "pub",   "in",     "opaque", "mut",
-      "null",   "const",    "static", "while", "loop",   "for",    "match",
-      "break",  "continue", "copy",   "move",  "unsafe", "extern",
+      "module", "in", "opaque", "mut", "null", "static", "unsafe", "extern",
   };
   for (const auto *keyword : Unsupported) {
     if (word == keyword) {
@@ -169,6 +185,14 @@ auto Lex(const Source::Buffer &source, Diagnostic::Diagnostics &diagnostics)
       continue;
     }
     if (IsDigit(c)) {
+      if (!tokens.empty() && tokens.back().Kind == TokenKind::Dot) {
+        while (i < text.size() &&
+               IsDigit(static_cast<unsigned char>(text[i]))) {
+          ++i;
+        }
+        tokens.push_back({TokenKind::Integer, {begin, i - begin}});
+        continue;
+      }
       unsigned radix = 10;
       if (text[i] == '0' && i + 1 < text.size()) {
         switch (text[i + 1]) {
@@ -259,6 +283,9 @@ auto Lex(const Source::Buffer &source, Diagnostic::Diagnostics &diagnostics)
     if (i + 1 < text.size()) {
       const auto pair = text.substr(i, 2);
       const std::array Pairs = {std::pair{"->", TokenKind::Arrow},
+                                std::pair{"=>", TokenKind::FatArrow},
+                                std::pair{"::", TokenKind::Path},
+                                std::pair{"..", TokenKind::Rest},
                                 std::pair{"<<", TokenKind::ShiftLeft},
                                 std::pair{">>", TokenKind::ShiftRight},
                                 std::pair{"<=", TokenKind::LessEqual},
@@ -280,8 +307,30 @@ auto Lex(const Source::Buffer &source, Diagnostic::Diagnostics &diagnostics)
         continue;
       }
     }
+    if (c == '.' &&
+        (tokens.empty() || (tokens.back().Kind != TokenKind::Identifier &&
+                            tokens.back().Kind != TokenKind::Integer &&
+                            tokens.back().Kind != TokenKind::RightParen &&
+                            tokens.back().Kind != TokenKind::RightBracket &&
+                            tokens.back().Kind != TokenKind::RightBrace))) {
+      diagnostics.sourceError(
+          begin, "a leading decimal point is not a numeric literal");
+      return std::nullopt;
+    }
     TokenKind kind;
     switch (c) {
+    case '[':
+      kind = TokenKind::LeftBracket;
+      break;
+    case ']':
+      kind = TokenKind::RightBracket;
+      break;
+    case '.':
+      kind = TokenKind::Dot;
+      break;
+    case '@':
+      kind = TokenKind::At;
+      break;
     case '(':
       kind = TokenKind::LeftParen;
       break;

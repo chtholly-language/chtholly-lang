@@ -1,0 +1,56 @@
+struct S { x: i32 }
+enum Void {}
+
+fn stop() -> Void { abort(); }
+
+fn uninhabited_break(_ c: bool) -> i32 {
+    let r = loop {
+        if (c) { break { let dead = stop(); 0u8 }; }
+        let value = 42;
+        break value;
+    };
+    return r;
+}
+
+fn shadowed_break() -> i32 {
+    let n = false;
+    let r = loop { let n = 42; break n; };
+    return r;
+}
+
+fn divergent_break(_ c: bool) -> i32 {
+    let r = loop {
+        if (c) { break panic(); }
+        let v = 42;
+        break v;
+    };
+    return r;
+}
+
+fn destructured_if(_ c: bool) -> i32 {
+    let x = false;
+    let r = if (c) { let S { x } = S { x: 42 }; x } else { 42 };
+    return r;
+}
+
+fn destructured_match(_ c: bool) -> i32 {
+    let x = false;
+    let r = match (c) {
+        true => { let S { x } = S { x: 42 }; x },
+        false => 42,
+    };
+    return r;
+}
+
+fn main() -> i32 {
+    let (S { x, .. },) = (S { x: 42 },);
+    assert(x == 42);
+    assert(shadowed_break() == 42);
+    assert(divergent_break(false) == 42);
+    assert(uninhabited_break(false) == 42);
+    assert(destructured_if(true) == 42);
+    assert(destructured_if(false) == 42);
+    assert(destructured_match(true) == 42);
+    assert(destructured_match(false) == 42);
+    return 42;
+}

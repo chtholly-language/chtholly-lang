@@ -1,5 +1,5 @@
 {
   "schema_version": 2, "name": "regression.syntax.trailing_input", "kind": "compile_fail",
-  "source": "trailing.cns", "basis": "Top-level trailing text must be another complete function declaration",
-  "compile": { "exit_code": 1, "stderr": { "contains": ["trailing.cns:1:32: error:", "expected 'fn'"] } }
+  "source": "trailing.cns", "basis": "R3 top-level trailing text must begin a supported declaration; diagnose its token, not the following EOF",
+  "compile": { "exit_code": 1, "stderr": { "contains": ["trailing.cns:1:32: error:", "expected a supported top-level declaration"] } }
 }

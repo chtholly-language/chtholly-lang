@@ -1,0 +1,16 @@
+const COUNT: usize = { let half: usize = 2; half + 1 };
+fn main() -> i32 {
+    let values: i32[COUNT] = [10, 11, 21];
+    var index: usize = 0;
+    var total = 0;
+    while (index < values.len) {
+        total = total + values[index];
+        index = index + 1;
+    }
+    let moved = move values;
+    assert(values.len == 3usize);
+    let answer = outer: loop {
+        loop { break @outer total; }
+    };
+    return answer;
+}

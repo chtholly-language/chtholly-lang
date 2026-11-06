@@ -6,7 +6,7 @@
     "license": "Apache-2.0 WITH LLVM-exception; component notices apply",
     "purpose": "Numeric ADT/Support on Linux and selected compiler-rt builtins on Windows",
     "preparation": "explicit external checkout; no project configure download",
-    "runtime_abi": 2, "runtime_crt": "Windows x64 /MD, clang-cl 18.1.8, no sanitizer",
+    "runtime_abi": 3, "runtime_crt": "Windows x64 /MD, clang-cl 18.1.8, no sanitizer",
     "builtins": ["divti3", "modti3", "udivti3", "umodti3", "udivmodti4", "multi3", "muloti4",
       "floattisf", "floattidf", "floatuntisf", "floatuntidf", "clzti2", "clzdi2", "int_util"],
     "linux_support": "Release, Clang 18, uninstrumented LLVMSupport and LLVMDemangle"

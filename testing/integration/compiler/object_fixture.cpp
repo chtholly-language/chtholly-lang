@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Test-only object producer. All language checking uses production interfaces.
+#include "aggregate_ir_fixture.h"
 #include "entry.h"
 
 #include <Chtholly/CodeGen/codegen.h>
@@ -11,6 +12,20 @@
 auto FixtureMain(int argc, char **argv) -> int {
   if (argc != 3) {
     return 2;
+  }
+  if (std::string_view(argv[1]) == "--aggregate-edge") {
+    Chtholly::Diagnostic::Diagnostics diagnostics;
+    const auto verified = Chtholly::IR::Verify(
+        Chtholly::Testing::AggregateEdgeDraft(), diagnostics);
+    if (verified) {
+      const auto initialized = Chtholly::Flow::Analyze(*verified, diagnostics);
+      if (initialized && Chtholly::CodeGen::Testing::EmitFunctions(
+                             *initialized, argv[2], diagnostics)) {
+        return 0;
+      }
+    }
+    diagnostics.render(std::cerr);
+    return 1;
   }
   std::string error;
   const auto source =
@@ -40,7 +55,11 @@ auto FixtureMain(int argc, char **argv) -> int {
   if (!execution) {
     return fail();
   }
-  if (!Chtholly::CodeGen::Testing::EmitFunctions(*execution, argv[2],
+  const auto initialized = Chtholly::Flow::Analyze(*execution, diagnostics);
+  if (!initialized) {
+    return fail();
+  }
+  if (!Chtholly::CodeGen::Testing::EmitFunctions(*initialized, argv[2],
                                                  diagnostics)) {
     return fail();
   }

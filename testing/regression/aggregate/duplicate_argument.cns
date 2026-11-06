@@ -1,0 +1,5 @@
+fn f(x: i32, _ y: i32, label z: i32) {}
+fn main() -> i32 {
+    f(label: 10, 20, 30);
+    return 0;
+}

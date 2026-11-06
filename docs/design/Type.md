@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 ## 基本类型
 
 Chtholly 支持的基本类型有：

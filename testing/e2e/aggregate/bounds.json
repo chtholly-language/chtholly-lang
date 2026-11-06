@@ -1,0 +1,13 @@
+{
+  "schema_version": 2,
+  "name": "e2e.aggregate.bounds",
+  "kind": "run_fail",
+  "source": "bounds.cns",
+  "compile": { "exit_code": 0 },
+  "run": {
+    "exit_code": 120,
+    "stdout": { "exact": "" },
+    "failure": { "category": "Index.OutOfBounds", "file": "bounds.cns", "line": 3, "column": 18 }
+  },
+  "basis": "R3-A11: dynamic wide index is checked before usize normalization; exact failure identity and '[' location required"
+}

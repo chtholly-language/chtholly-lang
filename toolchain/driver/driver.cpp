@@ -4,6 +4,7 @@
 #include <Chtholly/Check/check.h>
 #include <Chtholly/CodeGen/codegen.h>
 #include <Chtholly/Diagnostic/diagnostic.h>
+#include <Chtholly/Flow/flow.h>
 #include <Chtholly/Lex/lex.h>
 #include <Chtholly/Lower/lower.h>
 #include <Chtholly/Parse/parse.h>
@@ -368,6 +369,10 @@ auto Compile(const Options &options) -> int {
   if (!execution) {
     return failure();
   }
+  const auto initialized = Flow::Analyze(*execution, diagnostics);
+  if (!initialized) {
+    return failure();
+  }
   const auto runtime = FindRuntime(diagnostics);
   if (!runtime) {
     return failure();
@@ -390,7 +395,7 @@ auto Compile(const Options &options) -> int {
     return failure();
   }
   const auto object = UTF8Path(temporary.file("main.obj"));
-  if (!CodeGen::EmitObject(*execution, object, diagnostics)) {
+  if (!CodeGen::EmitObject(*initialized, object, diagnostics)) {
     return failure();
   }
   const auto executable = temporary.file("linked.exe");

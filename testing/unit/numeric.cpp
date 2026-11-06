@@ -5,7 +5,7 @@
 
 namespace Chtholly::Testing {
 namespace {
-using T = Target::Type;
+using T = Target::Scalar;
 using O = Numeric::Operation;
 using F = Numeric::Failure;
 auto Integer(std::string_view value, T type,
@@ -17,6 +17,18 @@ auto Integer(std::string_view value, T type,
   const auto result = Numeric::Literal(value, 10, type, negative, budget);
   if (!result) {
     throw std::logic_error("invalid numeric test vector");
+  }
+  return *result.ValueResult;
+}
+auto Mathematics(std::string_view value,
+                 Numeric::Budget &budget) -> Numeric::Value {
+  const bool negative = value.starts_with('-');
+  if (negative) {
+    value.remove_prefix(1);
+  }
+  const auto result = Numeric::MathematicalLiteral(value, 10, negative, budget);
+  if (!result) {
+    throw std::logic_error("invalid mathematical fixture");
   }
   return *result.ValueResult;
 }
@@ -47,18 +59,20 @@ TEST(numeric, type_identity_and_integer_ranges) {
 TEST(numeric, leading_zeroes_preserve_budget_and_value) {
   Numeric::Budget budget;
   for (const auto radix : {2U, 8U, 10U, 16U}) {
-    for (const auto type : {T::I32, T::MathematicalInteger}) {
-      const auto zero =
-          Numeric::Literal(std::string(4096, '0'), radix, type, false, budget);
+    for (const auto mathematical : {false, true}) {
+      const auto form = [&](std::string digits, bool negative) {
+        return mathematical
+                   ? Numeric::MathematicalLiteral(digits, radix, negative,
+                                                  budget)
+                   : Numeric::Literal(digits, radix, T::I32, negative, budget);
+      };
+      const auto zero = form(std::string(4096, '0'), false);
       ASSERT_TRUE(zero);
       EXPECT_EQ(zero.ValueResult->describe(), "0");
-      const auto one = Numeric::Literal(std::string(4095, '0') + "1", radix,
-                                        type, true, budget);
+      const auto one = form(std::string(4095, '0') + "1", true);
       ASSERT_TRUE(one);
       EXPECT_EQ(one.ValueResult->describe(), "-1");
-      EXPECT_EQ(Numeric::Literal(std::string(4096, '0') + "1", radix, type,
-                                 false, budget)
-                    .Error,
+      EXPECT_EQ(form(std::string(4096, '0') + "1", false).Error,
                 F::ResourceExceeded);
     }
   }
@@ -198,9 +212,9 @@ TEST(numeric, ieee_literal_and_arithmetic_policies) {
 }
 TEST(numeric, mathematical_values_and_resource_limits) {
   Numeric::Budget budget;
-  const auto large = Integer("340282366920938463463374607431768211456",
-                             T::MathematicalInteger, budget);
-  const auto one = Integer("1", T::MathematicalInteger, budget);
+  const auto large =
+      Mathematics("340282366920938463463374607431768211456", budget);
+  const auto one = Mathematics("1", budget);
   const auto result = Numeric::Binary(O::Add, large, one, budget);
   ASSERT_TRUE(result);
   EXPECT_EQ(result.ValueResult->describe(),
@@ -213,9 +227,8 @@ TEST(numeric, mathematical_values_and_resource_limits) {
             F::ResourceExceeded);
   limits.IntegerBits = 8;
   Numeric::Budget narrow(limits);
-  EXPECT_EQ(
-      Numeric::Literal("255", 10, T::MathematicalInteger, false, narrow).Error,
-      F::ResourceExceeded);
+  EXPECT_EQ(Numeric::MathematicalLiteral("255", 10, false, narrow).Error,
+            F::ResourceExceeded);
   limits.EvaluationSteps = 0;
   Numeric::Budget exhausted(limits);
   EXPECT_EQ(Numeric::Literal("0", 10, T::I32, false, exhausted).Error,

@@ -4,7 +4,7 @@
 #include <algorithm>
 
 namespace Chtholly::Check {
-using Type = Target::Type;
+using Type = Types::TypeId;
 using Id = SemIR::Id;
 auto Checker::call(Id node, bool executable) -> Type {
   const auto &syntax = Tree.Nodes[node];
@@ -16,7 +16,8 @@ auto Checker::call(Id node, bool executable) -> Type {
     fail(node, "only direct function calls are supported");
   } else {
     const auto spelling = name(Tree.Nodes[callee].Text);
-    if (lookup(spelling)) {
+    if (lookup(spelling) || Constants.contains(spelling) ||
+        TypeNames.contains(spelling)) {
       fail(node, "nearest local binding is not callable");
     } else if (const auto found = Functions.find(spelling);
                found != Functions.end()) {
@@ -38,13 +39,10 @@ auto Checker::call(Id node, bool executable) -> Type {
     }
   }
   std::vector<bool> supplied(parameters.size(), false);
-  bool namedSeen = false;
-  bool completes = true;
   std::size_t position = 0;
   for (const auto &argument : syntax.Arguments) {
     Id slot = SemIR::None;
     if (argument.Named) {
-      namedSeen = true;
       const auto label = name(argument.Label);
       for (Id i = 0; i < parameters.size(); ++i) {
         if (!parameters[i].Label.empty() && parameters[i].Label == label) {
@@ -52,27 +50,32 @@ auto Checker::call(Id node, bool executable) -> Type {
           break;
         }
       }
-    } else if (namedSeen) {
-      fail(node, "positional argument follows a named argument");
     } else if (position < parameters.size()) {
-      slot = static_cast<Id>(position++);
+      slot = static_cast<Id>(position);
     }
     if (slot == SemIR::None || supplied[slot]) {
       fail(node, "unknown, duplicate, or excess argument");
+      slot = SemIR::None;
     } else {
       supplied[slot] = true;
     }
-    expression(argument.Expression,
-               slot == SemIR::None ? Type::Invalid : parameters[slot].ValueType,
-               executable && completes);
-    completes &= Result.Nodes[argument.Expression].Completes;
     checked.Arguments.push_back(argument.Expression);
     checked.Slots.push_back(slot);
+    ++position;
   }
   if (std::find(supplied.begin(), supplied.end(), false) != supplied.end()) {
     fail(node, "missing required argument");
   }
-  checked.Completes = completes && checked.ValueType != Type::Never;
+  bool completes = true;
+  for (std::size_t i = 0; i < checked.Arguments.size(); ++i) {
+    const auto slot = checked.Slots[i];
+    expression(checked.Arguments[i],
+               slot == SemIR::None ? Type::Invalid : parameters[slot].ValueType,
+               executable && completes);
+    completes &= Result.Nodes[checked.Arguments[i]].Completes;
+  }
+  checked.Completes = completes && checked.ValueType != Type::Invalid &&
+                      TypeBuilder.inhabited(checked.ValueType);
   return checked.ValueType;
 }
 auto Checker::block(Id node, Type context, bool executable,
@@ -222,20 +225,24 @@ auto Checker::bind(Id node, bool executable) -> void {
       valueType = alternative.ValueType;
     }
   }
-  auto &function = Result.Functions[CurrentFunction];
-  const auto spelling = name(syntax.Text);
-  if (spelling != "_" && Scopes.back().contains(spelling)) {
-    fail(node, "duplicate local name in this scope");
+  std::unordered_map<std::string, Id> bindings;
+  checked.Pattern = pattern(
+      syntax.Pattern, annotation == Type::Invalid ? valueType : annotation,
+      syntax.Mutable, false, bindings);
+  if (Failed) {
+    checked.Completes = false;
+    return;
   }
-  checked.Entity = static_cast<Id>(function.Locals.size());
-  function.Locals.push_back(
-      {spelling, annotation == Type::Invalid ? valueType : annotation,
-       syntax.Mutable});
+  if (valueType != Type::Invalid) {
+    coverage(annotation == Type::Invalid ? valueType : annotation,
+             {checked.Pattern}, node);
+  }
+  if (Result.Patterns[checked.Pattern].Form == SemIR::PatternKind::Binding) {
+    checked.Entity = Result.Patterns[checked.Pattern].Local;
+  }
   // Static name scope starts after the initializer. No runtime slot is
   // published on a divergent path; unreachable source still resolves names.
-  if (spelling != "_") {
-    Scopes.back()[spelling] = checked.Entity;
-  }
+  bindPattern(checked.Pattern, false);
   checked.ValueType = Type::Unit;
   checked.Completes = completes;
 }
@@ -264,22 +271,68 @@ auto Checker::statement(Id node, bool executable) -> void {
   case Parse::Kind::Assign: {
     checked.Form = SemIR::Kind::Assign;
     checked.Right = syntax.Right;
-    const auto target = root(syntax.Left);
-    Type targetType = Type::Invalid;
-    if (Tree.Nodes[target].Form != Parse::Kind::Name) {
-      fail(node, "assignment target must be a local position");
-    } else if (const auto local = lookup(name(Tree.Nodes[target].Text))) {
-      checked.Entity = *local;
-      const auto &binding = Result.Functions[CurrentFunction].Locals[*local];
-      targetType = binding.ValueType;
-      if (!binding.Writable) {
-        fail(node, "cannot assign to an immutable local position");
-      }
-    } else {
-      fail(node, "unknown assignment target");
-    }
+    checked.Left = syntax.Left;
+    // The RHS is evaluated before locating the destination. It still needs
+    // the declared element type when evaluating an index will diverge.
+    const auto targetType = hint(syntax.Left, true);
     expression(syntax.Right, targetType, executable);
-    checked.Completes = Result.Nodes[syntax.Right].Completes;
+    const auto actualTarget =
+        expression(syntax.Left, Type::Invalid,
+                   executable && Result.Nodes[syntax.Right].Completes, true);
+    const auto &target = Result.Nodes[syntax.Left];
+    if (target.ValueCategory != SemIR::Category::Place || !target.Writable) {
+      fail(node, "assignment requires a writable owned position");
+    }
+    if (Result.Nodes[syntax.Right].Completes &&
+        Result.Nodes[syntax.Right].ValueType != actualTarget) {
+      fail(node, "assignment source and destination types differ");
+    }
+    checked.Completes =
+        Result.Nodes[syntax.Right].Completes && target.Completes;
+    return;
+  }
+  case Parse::Kind::Break:
+  case Parse::Kind::Continue: {
+    checked.Form = syntax.Form == Parse::Kind::Break ? SemIR::Kind::Break
+                                                     : SemIR::Kind::Continue;
+    checked.Left = syntax.Left;
+    const auto label = name(syntax.Label);
+    std::size_t selected = Loops.size();
+    for (auto i = Loops.size(); i != 0; --i) {
+      if (label.empty() || Loops[i - 1].Label == label) {
+        selected = i - 1;
+        break;
+      }
+    }
+    if (selected == Loops.size()) {
+      fail(node, "jump does not name an active loop");
+    } else {
+      const auto targetId = Loops[selected].Node;
+      const auto targetType = Loops[selected].Result;
+      const bool targetWhile = Loops[selected].While;
+      checked.Entity = targetId;
+      if (syntax.Form == Parse::Kind::Continue && syntax.Left != SemIR::None) {
+        fail(node, "continue cannot carry a value");
+      }
+      if (targetWhile && syntax.Left != SemIR::None) {
+        fail(node, "while break cannot carry a value");
+      }
+      Type value = Type::Unit;
+      bool normal = true;
+      if (syntax.Left != SemIR::None) {
+        value = expression(syntax.Left, targetType, executable);
+        normal = Result.Nodes[syntax.Left].Completes;
+      }
+      if (syntax.Form == Parse::Kind::Break && normal && value != Type::Never) {
+        if (Loops[selected].Result == Type::Invalid) {
+          Loops[selected].Result = value;
+        } else if (value != Loops[selected].Result) {
+          fail(node, "loop break values must have the same type");
+        }
+        Loops[selected].HasBreak |= executable && normal;
+      }
+    }
+    checked.Completes = false;
     return;
   }
   case Parse::Kind::Discard:

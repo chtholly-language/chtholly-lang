@@ -2,7 +2,7 @@
 #include "checker.h"
 
 namespace Chtholly::Check {
-using Type = Target::Type;
+using Type = Types::TypeId;
 using Id = SemIR::Id;
 using O = Numeric::Operation;
 
@@ -20,39 +20,43 @@ auto Checker::finish(Id node, Numeric::Result result,
     fail(node, std::string(Numeric::FailureName(result.Error)));
   }
 }
-auto Checker::literal(Id node, Type context, bool negative) -> Type {
+auto Checker::literal(Id node, Type context, bool negative,
+                      SemIR::Node *destination) -> Type {
   const auto &syntax = Tree.Nodes[node];
-  auto &checked = Result.Nodes[node];
+  auto &checked = destination ? *destination : Result.Nodes[node];
   checked.Form = SemIR::Kind::Literal;
   auto text = Source.slice(syntax.Text);
   Type valueType;
   if (syntax.SuffixLength != 0) {
-    valueType = Target::Lookup(text.substr(text.size() - syntax.SuffixLength))
+    valueType = Types::Lookup(text.substr(text.size() - syntax.SuffixLength))
                     .value_or(Type::Invalid);
     text.remove_suffix(syntax.SuffixLength);
   } else if (syntax.Form == Parse::Kind::Float) {
     valueType = Target::IsFloat(context) ? context : Type::F64;
   } else {
-    valueType =
-        Target::IsInteger(context) || context == Type::MathematicalInteger
-            ? context
-            : Type::I32;
+    valueType = Target::IsInteger(context) || MathContext ? context : Type::I32;
   }
   checked.ValueType = valueType;
   if (syntax.Radix != 10) {
     text.remove_prefix(2);
   }
   // Literal formation remains mandatory even on a path that cannot run.
+  const bool mathematicalLiteral = MathContext && syntax.SuffixLength == 0 &&
+                                   syntax.Form == Parse::Kind::Integer;
   auto formed =
-      Numeric::Literal(text, syntax.Radix, valueType, negative, Budget);
+      mathematicalLiteral
+          ? Numeric::MathematicalLiteral(text, syntax.Radix, negative, Budget)
+          : Numeric::Literal(text, syntax.Radix, Target::ScalarOf(valueType),
+                             negative, Budget);
   checked.Constant = std::move(formed.ValueResult);
   checked.ConstantFailure = formed.Error;
   if (formed.Error != Numeric::Failure::None) {
-    fail(node, "cannot form a literal of type " +
-                   std::string(Target::Name(valueType)) + ": " +
+    fail(node, "cannot form a literal of type " + describe(valueType) + ": " +
                    std::string(Numeric::FailureName(formed.Error)));
   }
-  expect(node, context);
+  if (!destination) {
+    expect(node, context);
+  }
   return valueType;
 }
 auto Checker::unary(Id node, Type context, bool executable) -> Type {
@@ -67,8 +71,7 @@ auto Checker::unary(Id node, Type context, bool executable) -> Type {
   const bool minimumLiteral =
       checked.Operation == O::Negate &&
       Tree.Nodes[operand].Form == Parse::Kind::Integer &&
-      (Target::IsSigned(signedContext) || signedContext == Type::Invalid ||
-       signedContext == Type::MathematicalInteger);
+      (Target::IsSigned(signedContext) || signedContext == Type::Invalid);
   if (minimumLiteral) {
     Result.Nodes[operand].Executable = executable;
     literal(operand, context, true);
@@ -90,8 +93,7 @@ auto Checker::unary(Id node, Type context, bool executable) -> Type {
   auto operandContext = context;
   if (checked.Operation == O::Not) {
     operandContext = Type::Bool;
-  } else if (!(Target::IsNumeric(context) ||
-               context == Type::MathematicalInteger)) {
+  } else if (!(Target::IsNumeric(context) || context == Type::Invalid)) {
     operandContext = Type::Invalid;
   }
   const auto operandType = expression(syntax.Left, operandContext, executable);
@@ -103,8 +105,7 @@ auto Checker::unary(Id node, Type context, bool executable) -> Type {
   } else if (checked.Operation == O::Complement) {
     eligible = Target::IsInteger(operandType);
   } else {
-    eligible = Target::IsNumeric(operandType) ||
-               operandType == Type::MathematicalInteger;
+    eligible = Target::IsNumeric(operandType) || operandType == Type::Invalid;
   }
   if (!eligible) {
     fail(node, "operand does not support this unary operation");
@@ -136,8 +137,7 @@ auto Checker::binary(Id node, Type context, bool executable) -> Type {
                         : comparison ? Type::Invalid
                                      : context;
   if (!logical && !comparison &&
-      !(Target::IsNumeric(operandContext) ||
-        operandContext == Type::MathematicalInteger)) {
+      !(Target::IsNumeric(operandContext) || operandContext == Type::Invalid)) {
     operandContext = Type::Invalid;
   }
   if (!logical) {
@@ -183,11 +183,11 @@ auto Checker::binary(Id node, Type context, bool executable) -> Type {
   } else if (checked.Operation == O::BitAnd || checked.Operation == O::BitOr ||
              checked.Operation == O::BitXor ||
              checked.Operation == O::Remainder) {
-    eligible &= Target::IsInteger(base) || base == Type::MathematicalInteger ||
-                base == Type::Never;
+    eligible &=
+        Target::IsInteger(base) || base == Type::Invalid || base == Type::Never;
   } else {
-    eligible &= Target::IsNumeric(base) || base == Type::MathematicalInteger ||
-                base == Type::Never;
+    eligible &=
+        Target::IsNumeric(base) || base == Type::Invalid || base == Type::Never;
   }
   if (!eligible && leftType != Type::Invalid && rightType != Type::Invalid) {
     fail(node, "operands do not support this operation with these types");
@@ -220,15 +220,17 @@ auto Checker::conversion(Id node, bool executable) -> Type {
   checked.Form = SemIR::Kind::Convert;
   checked.Left = syntax.Left;
   checked.ValueType = type(syntax.Annotation);
-  const auto sourceContext =
-      mathematical(syntax.Left) ? Type::MathematicalInteger : Type::Invalid;
+  const auto sourceContext = Type::Invalid;
+  const auto oldMath = MathContext;
+  MathContext = mathematical(syntax.Left);
   const auto sourceType = expression(syntax.Left, sourceContext, executable);
+  MathContext = oldMath;
   const auto &source = Result.Nodes[syntax.Left];
   checked.Completes = source.Completes;
   const bool eligible =
       Target::IsNumeric(checked.ValueType) &&
-      (Target::IsNumeric(sourceType) ||
-       sourceType == Type::MathematicalInteger || sourceType == Type::Never);
+      (Target::IsNumeric(sourceType) || sourceType == Type::Invalid ||
+       sourceType == Type::Never);
   if (!eligible) {
     fail(node, "as requires numeric source and target types");
   }
@@ -238,7 +240,8 @@ auto Checker::conversion(Id node, bool executable) -> Type {
   }
   return checked.ValueType;
 }
-auto Checker::expression(Id node, Type context, bool executable) -> Type {
+auto Checker::expression(Id node, Type context, bool executable,
+                         bool locateOnly) -> Type {
   if (ExpressionDepth++ == 0) {
     Budget = Numeric::Budget(Budget.limits());
   }
@@ -268,9 +271,22 @@ auto Checker::expression(Id node, Type context, bool executable) -> Type {
     checked.Form = SemIR::Kind::Local;
     if (const auto local = lookup(name(syntax.Text))) {
       checked.Entity = *local;
+      const auto &binding = Result.Functions[CurrentFunction].Locals[*local];
       checked.ValueType =
           Result.Functions[CurrentFunction].Locals[*local].ValueType;
-      checked.Completes = checked.ValueType != Type::Never;
+      checked.ValueCategory =
+          binding.Trial ? SemIR::Category::TrialPlace : SemIR::Category::Place;
+      checked.Writable = binding.Writable && !binding.Trial;
+      checked.Completes = checked.ValueType != Type::Invalid &&
+                          TypeBuilder.inhabited(checked.ValueType);
+      result = checked.ValueType;
+    } else if (const auto found = Constants.find(name(syntax.Text));
+               found != Constants.end()) {
+      checked.Form = SemIR::Kind::Literal;
+      checked.Constant = constant(found->second);
+      checked.ValueType = checked.Constant
+                              ? Target::SourceType(checked.Constant->type())
+                              : Type::Invalid;
       result = checked.ValueType;
     } else {
       fail(node, "unknown local name or function used as a value");
@@ -279,11 +295,13 @@ auto Checker::expression(Id node, Type context, bool executable) -> Type {
   case Parse::Kind::Group:
     checked.Form = SemIR::Kind::Group;
     checked.Left = syntax.Left;
-    result = expression(syntax.Left, context, executable);
+    result = expression(syntax.Left, context, executable, locateOnly);
     checked.ValueType = result;
     checked.Completes = Result.Nodes[syntax.Left].Completes;
     checked.Constant = Result.Nodes[syntax.Left].Constant;
     checked.ConstantFailure = Result.Nodes[syntax.Left].ConstantFailure;
+    checked.ValueCategory = Result.Nodes[syntax.Left].ValueCategory;
+    checked.Writable = Result.Nodes[syntax.Left].Writable;
     break;
   case Parse::Kind::Unary:
     result = unary(node, context, executable);
@@ -303,9 +321,59 @@ auto Checker::expression(Id node, Type context, bool executable) -> Type {
   case Parse::Kind::If:
     result = branch(node, context, executable);
     break;
+  case Parse::Kind::Tuple:
+  case Parse::Kind::Array:
+  case Parse::Kind::Repeat:
+  case Parse::Kind::Construct:
+    result = aggregate(node, context, executable);
+    break;
+  case Parse::Kind::Project:
+  case Parse::Kind::Index:
+    result = projection(node, executable);
+    break;
+  case Parse::Kind::Copy:
+  case Parse::Kind::Move:
+    checked.Form = syntax.Form == Parse::Kind::Copy ? SemIR::Kind::Copy
+                                                    : SemIR::Kind::Move;
+    checked.Left = syntax.Left;
+    checked.ValueType = result = expression(syntax.Left, context, executable);
+    checked.Completes = Result.Nodes[syntax.Left].Completes;
+    if (syntax.Form == Parse::Kind::Copy && result != Type::Invalid &&
+        !TypeBuilder.copy(result)) {
+      fail(node, "explicit copy requires Copy qualification");
+    }
+    if (Result.Nodes[syntax.Left].ValueCategory ==
+            SemIR::Category::TrialPlace &&
+        syntax.Form == Parse::Kind::Move) {
+      fail(node, "cannot move a trial pattern binding");
+    }
+    if (syntax.Form == Parse::Kind::Move && hasDynamicProjection(syntax.Left)) {
+      fail(node, "cannot move out of a dynamic array element, including Copy "
+                 "elements");
+    }
+    break;
+  case Parse::Kind::Loop:
+  case Parse::Kind::While:
+    result = loop(node, context, executable);
+    break;
+  case Parse::Kind::Match:
+    result = match(node, context, executable);
+    break;
   default:
     fail(node, "statement is not an expression");
     break;
+  }
+  if (!locateOnly && checked.ValueCategory == SemIR::Category::TrialPlace &&
+      result != Type::Invalid && !TypeBuilder.copy(result)) {
+    fail(node, "trial pattern bindings can only expose Copy observations "
+               "before guard commitment");
+  }
+  if (!locateOnly && result != Type::Invalid &&
+      (checked.Form == SemIR::Kind::Index ||
+       checked.Form == SemIR::Kind::Project) &&
+      hasDynamicProjection(node) && !TypeBuilder.copy(result)) {
+    fail(node, "taking a dynamic array element requires Copy; dynamic move is "
+               "not supported");
   }
   expect(node, context);
   return result;

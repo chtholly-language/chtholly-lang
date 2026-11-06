@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 ## 内置函数
 
 | 函数签名 | 行为 |

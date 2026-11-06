@@ -1,0 +1,9 @@
+{
+  "schema_version": 2,
+  "name": "e2e.aggregate.zero_repeat",
+  "kind": "run",
+  "source": "zero_repeat.cns",
+  "compile": { "exit_code": 0 },
+  "run": { "exit_code": 42, "stdout": { "exact": "" }, "stderr": { "exact": "" } },
+  "basis": "R3-A03/A10: zero repeat executes its seed exactly once; ![0] constructs no impossible element; this is not evidence for future user Drop"
+}

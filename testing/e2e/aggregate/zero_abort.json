@@ -1,0 +1,9 @@
+{
+  "schema_version": 2,
+  "name": "e2e.aggregate.zero_abort",
+  "kind": "run_abort",
+  "source": "zero_abort.cns",
+  "compile": { "exit_code": 0 },
+  "run": { "exit_code": 121, "stdout": { "exact": "" }, "stderr": { "exact": "" } },
+  "basis": "R3-A10: zero repeat must execute canonical abort rather than manufacture an empty normal result"
+}

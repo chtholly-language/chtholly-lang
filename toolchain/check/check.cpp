@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 #include "checker.h"
+#include <Chtholly/Target/layout.h>
+#include <stdexcept>
 #include <unordered_set>
 
 namespace Chtholly::Check {
-using Type = Target::Type;
+using Type = Types::TypeId;
 using Id = SemIR::Id;
 Checker::Checker(const Source::Buffer &source, const Parse::Tree &tree,
-                 Diagnostic::Diagnostics &diagnostics, Numeric::Limits limits)
+                 Diagnostic::Diagnostics &diagnostics, Numeric::Limits limits,
+                 PatternLimits patternLimits)
     : Source(source), Tree(tree), Diagnostics(diagnostics), Budget(limits) {
   Result.SourceName = source.name();
   Result.Nodes.resize(tree.Nodes.size());
@@ -14,6 +17,7 @@ Checker::Checker(const Source::Buffer &source, const Parse::Tree &tree,
     Result.Nodes[i].Span = tree.Nodes[i].Text;
     Result.Nodes[i].Location = source.locate(tree.Nodes[i].Text.Begin);
   }
+  CoverageLimits = patternLimits;
 }
 auto Checker::name(Source::Span span) const -> std::string {
   auto spelling = Source.slice(span);
@@ -37,13 +41,36 @@ auto Checker::type(Parse::TypeSyntax syntax, Type defaultType) -> Type {
   if (syntax.Unit) {
     return Type::Unit;
   }
-  const auto spelling = name(syntax.Text);
-  const auto resolved = Target::Lookup(spelling);
-  if (!resolved) {
-    error(syntax.Text.Begin, "unknown or unsupported type '" + spelling + "'");
-    return Type::Invalid;
+  if (syntax.Form == Parse::TypeSyntax::Kind::Tuple) {
+    std::vector<Type> elements;
+    for (const auto &element : syntax.Elements) {
+      elements.push_back(type(element));
+    }
+    return TypeBuilder.tuple(std::move(elements));
   }
-  return *resolved;
+  if (syntax.Form == Parse::TypeSyntax::Kind::Array) {
+    const auto element = type(syntax.Elements.at(0));
+    const auto count = length(syntax.Length);
+    return count ? TypeBuilder.array(element, *count) : Type::Invalid;
+  }
+  const auto spelling = name(syntax.Text);
+  const auto resolved = Types::Lookup(spelling);
+  if (resolved) {
+    return Type(*resolved);
+  }
+  if (const auto found = TypeNames.find(spelling); found != TypeNames.end()) {
+    return found->second;
+  }
+  if (const auto alias = Aliases.find(spelling); alias != Aliases.end()) {
+    return resolveAlias(alias->second);
+  }
+  error(syntax.Text.Begin, "unknown or unsupported type '" + spelling + "'");
+  return Type::Invalid;
+}
+auto Checker::describe(Type valueType) const -> std::string {
+  return valueType.owner() == nullptr
+             ? std::string(Types::Name(valueType.primitive()))
+             : TypeBuilder.get(valueType).Name;
 }
 auto Checker::expect(Id node, Type expected) -> void {
   const auto actual = Result.Nodes[node].ValueType;
@@ -52,8 +79,7 @@ auto Checker::expect(Id node, Type expected) -> void {
   }
   if (expected != Type::Invalid && actual != Type::Invalid &&
       actual != Type::Never && actual != expected) {
-    fail(node, "expected " + std::string(Target::Name(expected)) + ", got " +
-                   std::string(Target::Name(actual)));
+    fail(node, "expected " + describe(expected) + ", got " + describe(actual));
   }
 }
 auto Checker::lookup(const std::string &spelling) const -> std::optional<Id> {
@@ -70,6 +96,21 @@ auto Checker::root(Id node) const -> Id {
     node = Tree.Nodes[node].Left;
   }
   return node;
+}
+auto Checker::hasDynamicProjection(Id node) const -> bool {
+  while (node != SemIR::None) {
+    const auto &record = Result.Nodes[node];
+    if (record.Form == SemIR::Kind::Index && !record.FixedIndex) {
+      return true;
+    }
+    if (record.Form != SemIR::Kind::Group &&
+        record.Form != SemIR::Kind::Project &&
+        record.Form != SemIR::Kind::Index) {
+      return false;
+    }
+    node = record.Left;
+  }
+  return false;
 }
 auto Checker::mathematical(Id node) const -> bool {
   const auto &value = Tree.Nodes[node];
@@ -93,7 +134,9 @@ auto Checker::mathematical(Id node) const -> bool {
     return false;
   }
 }
-auto Checker::hint(Id node) const -> Type { return hint(node, {}, false); }
+auto Checker::hint(Id node, bool locateOnly) -> Type {
+  return hint(node, {}, false, locateOnly);
+}
 auto Checker::operation(Lex::TokenKind token,
                         bool unary) const -> Numeric::Operation {
   using K = Lex::TokenKind;
@@ -144,13 +187,18 @@ auto Checker::operation(Lex::TokenKind token,
   }
 }
 auto Checker::run() -> std::optional<SemIR::Program> {
+  declarations();
+  if (Failed) {
+    return std::nullopt;
+  }
   for (const auto &syntax : Tree.Functions) {
     SemIR::Function function;
     function.Name = name(syntax.Name);
     function.ReturnType = type(syntax.ReturnType);
     function.Body = syntax.Body;
     const auto index = static_cast<Id>(Result.Functions.size());
-    if (function.Name == "_" ||
+    if (function.Name == "_" || TypeNames.contains(function.Name) ||
+        Constants.contains(function.Name) ||
         !Functions.emplace(function.Name, index).second) {
       error(syntax.Name.Begin, "duplicate or invalid function name");
     }
@@ -166,7 +214,8 @@ auto Checker::run() -> std::optional<SemIR::Program> {
           {label == "_" ? "" : label, local, parameterType});
       function.Locals.push_back(
           {name(parameter.Name), parameterType, parameter.Mutable});
-      function.HasNormalEntry &= parameterType != Type::Never;
+      function.HasNormalEntry &= parameterType != Type::Invalid &&
+                                 TypeBuilder.inhabited(parameterType);
     }
     if (function.Name == "main") {
       Result.Entry = index;
@@ -202,14 +251,30 @@ auto Checker::run() -> std::optional<SemIR::Program> {
       }
     }
   }
-  if (Failed) {
+  std::vector<Types::Error> typeErrors;
+  Result.Types = TypeBuilder.finish(typeErrors);
+  for (const auto &failure : typeErrors) {
+    error(0, failure.Message);
+  }
+  if (Result.Types) {
+    std::string layoutError;
+    if (!Target::Layouts::Build(*Result.Types, layoutError, Result.Target)) {
+      error(0, "target layout: " + layoutError);
+    }
+  }
+  if (Failed || !Result.Types) {
     return std::nullopt;
   }
   return SemIR::Program(std::move(Result));
 }
 auto Check(const Source::Buffer &source, const Parse::Tree &tree,
-           Diagnostic::Diagnostics &diagnostics,
-           Numeric::Limits limits) -> std::optional<SemIR::Program> {
-  return Checker(source, tree, diagnostics, limits).run();
+           Diagnostic::Diagnostics &diagnostics, Numeric::Limits limits,
+           PatternLimits patternLimits) -> std::optional<SemIR::Program> {
+  try {
+    return Checker(source, tree, diagnostics, limits, patternLimits).run();
+  } catch (const std::logic_error &failure) {
+    diagnostics.error("check", failure.what());
+    return std::nullopt;
+  }
 }
 } // namespace Chtholly::Check

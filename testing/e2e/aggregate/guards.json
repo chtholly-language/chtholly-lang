@@ -1,0 +1,9 @@
+{
+  "schema_version": 2,
+  "name": "e2e.aggregate.guards",
+  "kind": "run",
+  "source": "guards.cns",
+  "compile": { "exit_code": 0 },
+  "run": { "exit_code": 42, "stdout": { "exact": "" }, "stderr": { "exact": "" } },
+  "basis": "R3-A17/A18: first matching alternative selects one guard invocation; false retains external effects and continues to next arm"
+}

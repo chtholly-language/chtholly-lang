@@ -1,0 +1,5 @@
+fn read(_ index: i128) -> i32 {
+    let values = [1, 2];
+    return values[index];
+}
+fn main() -> i32 { return read(18446744073709551616i128); }

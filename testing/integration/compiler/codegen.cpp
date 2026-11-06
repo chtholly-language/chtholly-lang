@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 #include <Chtholly/Check/check.h>
 #include <Chtholly/CodeGen/codegen.h>
+#include <Chtholly/Flow/flow.h>
 #include <Chtholly/IR/ir.h>
 #include <Chtholly/Lex/lex.h>
 #include <Chtholly/Lower/lower.h>
@@ -16,6 +17,21 @@
 
 namespace Chtholly::Testing {
 namespace {
+auto EmitCheckedObject(const IR::Program &program, std::string path,
+                       Diagnostic::Diagnostics &diagnostics) -> bool {
+  const auto initialized = Flow::Analyze(program, diagnostics);
+  return initialized && CodeGen::EmitObject(*initialized, path, diagnostics);
+}
+auto VerifyScalarDraft(IR::Draft draft, Diagnostic::Diagnostics &diagnostics)
+    -> std::optional<IR::Program> {
+  Types::Builder types;
+  std::vector<Types::Error> errors;
+  draft.Types = types.finish(errors);
+  for (auto &function : draft.Functions) {
+    function.ValuePlaces.resize(function.Values.size(), IR::None);
+  }
+  return IR::Verify(std::move(draft), diagnostics);
+}
 auto HasObjectPayload(const std::filesystem::path &path) -> bool {
   // Read the size through the stream used for object inspection. This avoids
   // clang-tidy 18's enum-range false positive in MSVC's file_size bit flags.
@@ -83,7 +99,7 @@ TEST(codegen, windows_coff) {
   ASSERT_TRUE(execution);
   const auto path = file.directory() / "main.obj";
   const auto utf8 = path.u8string();
-  ASSERT_TRUE(CodeGen::EmitObject(
+  ASSERT_TRUE(EmitCheckedObject(
       *execution, std::string(utf8.begin(), utf8.end()), diagnostics));
   std::ifstream object(path, std::ios::binary);
   std::array<unsigned char, 20> header{};
@@ -112,13 +128,13 @@ TEST(codegen, canonical_abort_relocation) {
     ASSERT_TRUE(execution);
     const auto path = file.directory() / "main.obj";
     const auto utf8 = path.u8string();
-    ASSERT_TRUE(CodeGen::EmitObject(
+    ASSERT_TRUE(EmitCheckedObject(
         *execution, std::string(utf8.begin(), utf8.end()), diagnostics));
     EXPECT_EQ(HasRelocation(path, "chtholly_runtime_abort"), !shadowed);
   }
 }
 TEST(codegen, block_storage_order_is_not_execution_order) {
-  using T = Target::Type;
+  using T = Types::TypeId;
   for (bool reordered : {false, true}) {
     for (bool deadBlock : {false, true}) {
       IR::Draft draft;
@@ -149,19 +165,19 @@ TEST(codegen, block_storage_order_is_not_execution_order) {
       }
       draft.Functions.push_back(std::move(function));
       Diagnostic::Diagnostics diagnostics;
-      const auto execution = IR::Verify(std::move(draft), diagnostics);
+      const auto execution = VerifyScalarDraft(std::move(draft), diagnostics);
       ASSERT_TRUE(execution);
       SourceFile file("");
       const auto path = file.directory() / "main.obj";
       const auto utf8 = path.u8string();
-      ASSERT_TRUE(CodeGen::EmitObject(
+      ASSERT_TRUE(EmitCheckedObject(
           *execution, std::string(utf8.begin(), utf8.end()), diagnostics));
       EXPECT_TRUE(HasObjectPayload(path));
     }
   }
 }
 TEST(codegen, reordered_loop_parameters_and_dead_predecessor) {
-  using T = Target::Type;
+  using T = Types::TypeId;
   // Storage is entry, return, header, backedge, dead predecessor. The header
   // merges the entry constant and a backedge result; the return uses that
   // parameter. The dead predecessor must not become an LLVM phi incoming edge.
@@ -201,18 +217,18 @@ TEST(codegen, reordered_loop_parameters_and_dead_predecessor) {
   function.Blocks[4].End.First = {2, {0}};
   draft.Functions.push_back(std::move(function));
   Diagnostic::Diagnostics diagnostics;
-  const auto execution = IR::Verify(std::move(draft), diagnostics);
+  const auto execution = VerifyScalarDraft(std::move(draft), diagnostics);
   ASSERT_TRUE(execution);
   SourceFile file("");
   const auto path = file.directory() / "main.obj";
   const auto utf8 = path.u8string();
-  ASSERT_TRUE(CodeGen::EmitObject(
+  ASSERT_TRUE(EmitCheckedObject(
       *execution, std::string(utf8.begin(), utf8.end()), diagnostics));
   EXPECT_TRUE(HasObjectPayload(path));
 }
 
 TEST(codegen, branch_edges_to_same_block_keep_arguments) {
-  using T = Target::Type;
+  using T = Types::TypeId;
   for (bool condition : {false, true}) {
     for (bool sameArguments : {false, true}) {
       IR::Draft draft;
@@ -241,12 +257,12 @@ TEST(codegen, branch_edges_to_same_block_keep_arguments) {
       function.Blocks[1].End.Operands = {3};
       draft.Functions.push_back(std::move(function));
       Diagnostic::Diagnostics diagnostics;
-      const auto execution = IR::Verify(std::move(draft), diagnostics);
+      const auto execution = VerifyScalarDraft(std::move(draft), diagnostics);
       ASSERT_TRUE(execution);
       SourceFile file("");
       const auto path = file.directory() / "main.obj";
       const auto utf8 = path.u8string();
-      ASSERT_TRUE(CodeGen::EmitObject(
+      ASSERT_TRUE(EmitCheckedObject(
           *execution, std::string(utf8.begin(), utf8.end()), diagnostics));
       EXPECT_TRUE(HasObjectPayload(path));
     }

@@ -132,9 +132,8 @@ TEST(check, labels_shadowing_and_returns) {
   const auto prefix =
       std::string("fn f(a: i32, b: i32) -> i32 { return a + b; } "
                   "fn main() -> i32 { return ");
-  for (const auto *arguments :
-       {"f()", "f(1)", "f(1, 2, 3)", "f(a: 1, 2)", "f(a: 1, a: 2)",
-        "f(c: 1, b: 2)", "f(1, a: 2)"}) {
+  for (const auto *arguments : {"f()", "f(1)", "f(1, 2, 3)", "f(a: 1, a: 2)",
+                                "f(c: 1, b: 2)", "f(1, a: 2)"}) {
     EXPECT_FALSE(Accepts(prefix + arguments + "; }")) << arguments;
   }
 }
@@ -174,13 +173,9 @@ TEST(check, divergence_preserves_static_checks) {
 }
 TEST(check, rejects_postponed_features) {
   for (const auto *body : {
-           "move value;",
-           "copy value;",
            "let r = &value;",
-           "loop {}",
            "let x = value as? u8;",
            "const x = 1;",
-           "let x = [1, 2];",
        }) {
     EXPECT_FALSE(Accepts(std::string("fn main() -> i32 { let value = 0; ") +
                          body + " return 0; }"))

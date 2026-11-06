@@ -63,7 +63,7 @@ auto main(int argc, char **argv) -> int {
       return 2;
     }
   }
-  Chtholly::Runtime::chtholly_runtime_abi_v2();
+  Chtholly::Runtime::chtholly_runtime_abi_v3();
   Chtholly::Runtime::chtholly_runtime_initialize();
   const auto result = BridgeInvoke(inputs);
   constexpr char Digits[] = "0123456789abcdef";

@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 ## 函数
 
 Chtholly的基本函数形状如下，函数支持前向调用、直接递归和互递归。
@@ -24,17 +25,18 @@ Chtholly的参数列表允许下述写法。
 | `label local: T` | 位置或 `label: expression`，函数体使用 local |
 | `_ local: T` | 只允许位置 |
 
-目前位置参数之前不能出现标签。
-
 ```cns
 fn function(x: i32, _ y: i32, label z: i32) {
 
 }
 
-function(10, 20, 30);           // 合法：全部按位置
-function(x: 10, 20, 30);        // 拒绝：位置参数之前不能出现标签参数
-function(x: 10, 20, label: 30); // 拒绝：同上
-function(label: 10, 20, x: 30); // 拒绝：同上
+function(10, 20, 30);           // 合法
+function(x: 10, 20, 30);        // 合法
+function(x: 10, 20, label: 30); // 合法
+function(label: 10, 20, x: 30); // 合法
+
+function(label: 10, 20, 30);  // 非法
+function(10, x: 20, label: 30);  // 非法
 ```
 
 ## `!`
@@ -58,5 +60,15 @@ function(about());
 ```cns
 fn function() -> ! {
     panic();
+}
+```
+
+## var
+
+函数的参数默认是不可变的，如果需要对参数进行修改，就需要使用var。
+
+```cns
+fn function(var v: i32) {
+    v = v + 1;
 }
 ```

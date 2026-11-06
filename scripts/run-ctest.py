@@ -139,7 +139,7 @@ def main():
             llvm_bin = (Path(llvm_dir) / "../../../bin").resolve()
             summary["tools"]["clang_cl"] = subprocess.check_output([str(llvm_bin / "clang-cl.exe"), "--version"], timeout=15).decode("utf-8", "replace")
             summary["tools"]["lld_link"] = subprocess.check_output([str(llvm_bin / "lld-link.exe"), "--version"], timeout=15).decode("utf-8", "replace")
-        summary["rules"] = "R2/B2, Q1-Q5, !, value-producing as-else, uninhabited-parameter normal-entry decision"
+        summary["rules"] = "R3 aggregate values, checked Copy, local initialization/moves, patterns, loops, mixed positional/label calls; inherited R2 numeric decisions"
         dependency_lock = json.loads((root / "cmake/dependencies.json").read_text(encoding="utf-8"))
         summary["numeric_library"] = dependency_lock["llvm_source"]
         summary["coverage_boundaries"] = {

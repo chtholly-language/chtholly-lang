@@ -12,7 +12,10 @@
 #include <utility>
 
 namespace Chtholly::Numeric {
-using Target::Type;
+using Type = Target::Scalar;
+// An evaluator-only category. It cannot appear in the source type table,
+// target layouts or the runtime scalar wire protocol.
+constexpr Type Mathematical = static_cast<Type>(255);
 
 struct Value::Storage {
   explicit Storage(llvm::APInt integer) : Integer(std::move(integer)) {}
@@ -23,6 +26,7 @@ struct Value::Storage {
 };
 
 struct Access {
+  static auto TypeOf(const Value &value) -> Type { return value.Type; }
   static auto Get(const Value &value) -> const Value::Storage & {
     if (!value.Data) {
       throw std::logic_error("numeric value has no storage");
@@ -50,11 +54,12 @@ auto Semantics(Type type) -> const llvm::fltSemantics & {
 }
 auto Mathematics(const Value &value) -> llvm::APInt {
   const auto &bits = Access::Get(value).Integer;
-  if (value.type() == Type::MathematicalInteger) {
+  if (Access::TypeOf(value) == Mathematical) {
     return bits;
   }
-  return Target::IsSigned(value.type()) ? bits.sext(bits.getBitWidth() + 1)
-                                        : bits.zext(bits.getBitWidth() + 1);
+  return Target::IsSigned(Access::TypeOf(value))
+             ? bits.sext(bits.getBitWidth() + 1)
+             : bits.zext(bits.getBitWidth() + 1);
 }
 auto InRange(const llvm::APInt &integer, Type type,
              Target::Description target) -> bool {
@@ -70,7 +75,7 @@ auto FinishInteger(llvm::APInt value, Type type, Budget &budget,
   if (value.getBitWidth() > budget.limits().IntegerBits) {
     return Error(Failure::ResourceExceeded);
   }
-  if (type == Type::MathematicalInteger) {
+  if (type == Mathematical) {
     return Success(Access::Integer(type, std::move(value)));
   }
   if (!InRange(value, type, target)) {
@@ -183,8 +188,12 @@ auto IsRecoverable(Failure failure) -> bool {
   return failure >= Failure::Overflow && failure <= Failure::Fractional;
 }
 
+auto Value::type() const -> Target::Scalar {
+  return isMathematical() ? Target::Scalar::Invalid : Type;
+}
+auto Value::isMathematical() const -> bool { return Type == Mathematical; }
 auto Value::bits() const -> std::array<std::uint64_t, 2> {
-  if (Type == Target::Type::MathematicalInteger) {
+  if (Type == Mathematical) {
     throw std::logic_error("mathematical integers have no machine bit pattern");
   }
   const auto bits = Target::IsFloat(Type)
@@ -194,7 +203,7 @@ auto Value::bits() const -> std::array<std::uint64_t, 2> {
           bits.getBitWidth() > 64 ? bits.extractBitsAsZExtValue(64, 64) : 0};
 }
 auto Value::boolean() const -> bool {
-  if (Type != Target::Type::Bool) {
+  if (Type != Target::Scalar::Bool) {
     throw std::logic_error("non-boolean numeric value");
   }
   return !Access::Get(*this).Integer.isZero();
@@ -205,24 +214,23 @@ auto Value::describe() const -> std::string {
     Access::Get(*this).Float.toString(text);
   } else {
     Access::Get(*this).Integer.toString(
-        text, 10,
-        Target::IsSigned(Type) || Type == Target::Type::MathematicalInteger);
+        text, 10, Target::IsSigned(Type) || Type == Mathematical);
   }
   return std::string(text.data(), text.size());
 }
 auto Value::Boolean(bool value) -> Value {
-  return Access::Integer(Target::Type::Bool, llvm::APInt(1, value));
+  return Access::Integer(Target::Scalar::Bool, llvm::APInt(1, value));
 }
 auto Value::Unit() -> Value {
-  return Access::Integer(Target::Type::Unit, llvm::APInt(1, 0));
+  return Access::Integer(Target::Scalar::Unit, llvm::APInt(1, 0));
 }
-auto Value::FromBits(Target::Type type, std::array<std::uint64_t, 2> words,
+auto Value::FromBits(Target::Scalar type, std::array<std::uint64_t, 2> words,
                      Target::Description target) -> Value {
   if (!target.valid()) {
     throw std::invalid_argument("unsupported numeric target description");
   }
   const auto width = target.bits(type);
-  if (type == Target::Type::Unit) {
+  if (type == Target::Scalar::Unit) {
     return Unit();
   }
   if (width == 0) {
@@ -236,8 +244,9 @@ auto Value::FromBits(Target::Type type, std::array<std::uint64_t, 2> words,
   return Access::Integer(type, bits);
 }
 
-auto Literal(std::string_view digits, unsigned radix, Type type, bool negative,
-             Budget &budget, Target::Description target) -> Result {
+static auto FormLiteral(std::string_view digits, unsigned radix, Type type,
+                        bool negative, Budget &budget,
+                        Target::Description target) -> Result {
   if (!target.valid()) {
     return Error(Failure::InternalError);
   }
@@ -273,7 +282,7 @@ auto Literal(std::string_view digits, unsigned radix, Type type, bool negative,
     }
     return Success(Access::Float(type, std::move(value)));
   }
-  if (!(Target::IsInteger(type) || type == Type::MathematicalInteger) ||
+  if (!(Target::IsInteger(type) || type == Mathematical) ||
       (radix != 2 && radix != 8 && radix != 10 && radix != 16)) {
     return Error(Failure::InternalError);
   }
@@ -309,6 +318,18 @@ auto Literal(std::string_view digits, unsigned radix, Type type, bool negative,
                        Failure::OutOfRange);
 }
 
+auto Literal(std::string_view digits, unsigned radix, Type type, bool negative,
+             Budget &budget, Target::Description target) -> Result {
+  if (!(Target::IsNumeric(type))) {
+    return Error(Failure::InternalError);
+  }
+  return FormLiteral(digits, radix, type, negative, budget, target);
+}
+auto MathematicalLiteral(std::string_view digits, unsigned radix, bool negative,
+                         Budget &budget) -> Result {
+  return FormLiteral(digits, radix, Mathematical, negative, budget,
+                     Target::WindowsX64);
+}
 auto Unary(Operation op, const Value &value, Budget &budget,
            Target::Description target) -> Result {
   if (!target.valid()) {
@@ -318,33 +339,35 @@ auto Unary(Operation op, const Value &value, Budget &budget,
     return Error(Failure::ResourceExceeded);
   }
   if (op == Operation::Plus) {
-    if (Target::IsNumeric(value.type()) ||
-        value.type() == Type::MathematicalInteger) {
+    if (Target::IsNumeric(Access::TypeOf(value)) ||
+        Access::TypeOf(value) == Mathematical) {
       return Success(value);
     }
     return Error(Failure::InternalError);
   }
-  if (op == Operation::Not && value.type() == Type::Bool) {
+  if (op == Operation::Not && Access::TypeOf(value) == Type::Bool) {
     return Success(Value::Boolean(!value.boolean()));
   }
-  if (Target::IsFloat(value.type()) && op == Operation::Negate) {
+  if (Target::IsFloat(Access::TypeOf(value)) && op == Operation::Negate) {
     auto result = Access::Get(value).Float;
     result.changeSign();
-    return Success(Access::Float(value.type(), std::move(result)));
+    return Success(Access::Float(Access::TypeOf(value), std::move(result)));
   }
-  if (op == Operation::Complement && Target::IsInteger(value.type())) {
-    return Success(Access::Integer(value.type(), ~Access::Get(value).Integer));
+  if (op == Operation::Complement && Target::IsInteger(Access::TypeOf(value))) {
+    return Success(
+        Access::Integer(Access::TypeOf(value), ~Access::Get(value).Integer));
   }
-  if (op != Operation::Negate || !(Target::IsInteger(value.type()) ||
-                                   value.type() == Type::MathematicalInteger)) {
+  if (op != Operation::Negate || !(Target::IsInteger(Access::TypeOf(value)) ||
+                                   Access::TypeOf(value) == Mathematical)) {
     return Error(Failure::InternalError);
   }
   auto integer = Mathematics(value);
   if (integer.getBitWidth() >= budget.limits().IntegerBits) {
     return Error(Failure::ResourceExceeded);
   }
-  return FinishInteger(-integer.sext(integer.getBitWidth() + 1), value.type(),
-                       budget, target, Failure::Overflow);
+  return FinishInteger(-integer.sext(integer.getBitWidth() + 1),
+                       Access::TypeOf(value), budget, target,
+                       Failure::Overflow);
 }
 
 auto Binary(Operation op, const Value &left, const Value &right, Budget &budget,
@@ -355,7 +378,8 @@ auto Binary(Operation op, const Value &left, const Value &right, Budget &budget,
   if (!budget.consume()) {
     return Error(Failure::ResourceExceeded);
   }
-  if (left.type() == Type::Bool && right.type() == Type::Bool) {
+  if (Access::TypeOf(left) == Type::Bool &&
+      Access::TypeOf(right) == Type::Bool) {
     if (op == Operation::LogicalAnd || op == Operation::LogicalOr) {
       return Success(Value::Boolean(op == Operation::LogicalAnd
                                         ? left.boolean() && right.boolean()
@@ -367,7 +391,8 @@ auto Binary(Operation op, const Value &left, const Value &right, Budget &budget,
     }
     return Error(Failure::InternalError);
   }
-  if (Target::IsFloat(left.type()) && left.type() == right.type()) {
+  if (Target::IsFloat(Access::TypeOf(left)) &&
+      Access::TypeOf(left) == Access::TypeOf(right)) {
     auto value = Access::Get(left).Float;
     const auto &rhs = Access::Get(right).Float;
     if (IsComparison(op)) {
@@ -396,46 +421,46 @@ auto Binary(Operation op, const Value &left, const Value &right, Budget &budget,
     default:
       return Error(Failure::InternalError);
     }
-    return Success(Access::Float(left.type(), std::move(value)));
+    return Success(Access::Float(Access::TypeOf(left), std::move(value)));
   }
-  if (!(Target::IsInteger(left.type()) ||
-        left.type() == Type::MathematicalInteger) ||
-      !(Target::IsInteger(right.type()) ||
-        right.type() == Type::MathematicalInteger)) {
+  if (!(Target::IsInteger(Access::TypeOf(left)) ||
+        Access::TypeOf(left) == Mathematical) ||
+      !(Target::IsInteger(Access::TypeOf(right)) ||
+        Access::TypeOf(right) == Mathematical)) {
     return Error(Failure::InternalError);
   }
   if (op == Operation::ShiftLeft || op == Operation::ShiftRight) {
     const auto count = Mathematics(right);
-    const auto width = target.bits(left.type());
+    const auto width = target.bits(Access::TypeOf(left));
     if (width == 0 || count.isNegative() || count.getLimitedValue() >= width) {
       return Error(Failure::ShiftCount);
     }
     const auto amount = static_cast<unsigned>(count.getZExtValue());
     const auto &bits = Access::Get(left).Integer;
     if (op == Operation::ShiftLeft) {
-      return Success(Access::Integer(left.type(), bits.shl(amount)));
+      return Success(Access::Integer(Access::TypeOf(left), bits.shl(amount)));
     }
-    auto result =
-        Target::IsSigned(left.type()) ? bits.ashr(amount) : bits.lshr(amount);
-    return Success(Access::Integer(left.type(), std::move(result)));
+    auto result = Target::IsSigned(Access::TypeOf(left)) ? bits.ashr(amount)
+                                                         : bits.lshr(amount);
+    return Success(Access::Integer(Access::TypeOf(left), std::move(result)));
   }
-  if (left.type() != right.type()) {
+  if (Access::TypeOf(left) != Access::TypeOf(right)) {
     return Error(Failure::InternalError);
   }
   if (op == Operation::BitAnd || op == Operation::BitOr ||
       op == Operation::BitXor) {
     const auto &lhs = Access::Get(left).Integer;
     const auto &rhs = Access::Get(right).Integer;
-    if (!Target::IsInteger(left.type())) {
+    if (!Target::IsInteger(Access::TypeOf(left))) {
       return Error(Failure::InternalError);
     }
     if (op == Operation::BitAnd) {
-      return Success(Access::Integer(left.type(), lhs & rhs));
+      return Success(Access::Integer(Access::TypeOf(left), lhs & rhs));
     }
     if (op == Operation::BitOr) {
-      return Success(Access::Integer(left.type(), lhs | rhs));
+      return Success(Access::Integer(Access::TypeOf(left), lhs | rhs));
     }
-    return Success(Access::Integer(left.type(), lhs ^ rhs));
+    return Success(Access::Integer(Access::TypeOf(left), lhs ^ rhs));
   }
   auto lhs = Mathematics(left);
   auto rhs = Mathematics(right);
@@ -472,7 +497,7 @@ auto Binary(Operation op, const Value &left, const Value &right, Budget &budget,
   default:
     return Error(Failure::InternalError);
   }
-  return FinishInteger(std::move(result), left.type(), budget, target,
+  return FinishInteger(std::move(result), Access::TypeOf(left), budget, target,
                        Failure::Overflow);
 }
 
@@ -484,9 +509,9 @@ auto Convert(const Value &source, Type targetType, Budget &budget,
   if (!budget.consume()) {
     return Error(Failure::ResourceExceeded);
   }
-  const auto sourceType = source.type();
+  const auto sourceType = Access::TypeOf(source);
   const bool integer =
-      Target::IsInteger(sourceType) || sourceType == Type::MathematicalInteger;
+      Target::IsInteger(sourceType) || sourceType == Mathematical;
   if ((!integer && !Target::IsFloat(sourceType)) ||
       !Target::IsNumeric(targetType)) {
     return Error(Failure::InternalError);

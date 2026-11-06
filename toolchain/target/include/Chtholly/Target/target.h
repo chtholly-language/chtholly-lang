@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 #pragma once
 
+#include <Chtholly/Types/types.h>
+
 #include <cstdint>
 #include <optional>
 #include <string_view>
 
 namespace Chtholly::Target {
 
-enum class Type : std::uint8_t {
+enum class Scalar : std::uint8_t {
   Invalid,
   I8,
   I16,
@@ -25,8 +27,7 @@ enum class Type : std::uint8_t {
   F64,
   Bool,
   Unit,
-  Never,
-  MathematicalInteger
+  Never
 };
 
 struct Description {
@@ -39,46 +40,61 @@ struct Description {
            LittleEndian;
   }
 
-  constexpr auto bits(Type type) const -> unsigned {
+  constexpr auto bits(Scalar type) const -> unsigned {
     switch (type) {
-    case Type::I8:
-    case Type::U8:
+    case Scalar::I8:
+    case Scalar::U8:
       return 8;
-    case Type::I16:
-    case Type::U16:
+    case Scalar::I16:
+    case Scalar::U16:
       return 16;
-    case Type::I32:
-    case Type::U32:
-    case Type::F32:
+    case Scalar::I32:
+    case Scalar::U32:
+    case Scalar::F32:
       return 32;
-    case Type::I64:
-    case Type::U64:
-    case Type::F64:
+    case Scalar::I64:
+    case Scalar::U64:
+    case Scalar::F64:
       return 64;
-    case Type::I128:
-    case Type::U128:
+    case Scalar::I128:
+    case Scalar::U128:
       return 128;
-    case Type::ISize:
-    case Type::USize:
+    case Scalar::ISize:
+    case Scalar::USize:
       return PointerBits;
-    case Type::Bool:
+    case Scalar::Bool:
       return 1;
     default:
       return 0;
     }
   }
-  auto alignment(Type type) const -> unsigned;
+  auto alignment(Scalar type) const -> unsigned;
+  auto bits(Types::TypeId type) const -> unsigned;
 };
 
 inline constexpr Description WindowsX64{};
 
-auto Name(Type type) -> std::string_view;
-auto Lookup(std::string_view name) -> std::optional<Type>;
-auto IsInteger(Type type) -> bool;
-auto IsSigned(Type type) -> bool;
-auto IsFloat(Type type) -> bool;
-auto IsNumeric(Type type) -> bool;
-auto IsInhabited(Type type) -> bool;
-auto IsCopy(Type type) -> bool;
+auto Name(Scalar type) -> std::string_view;
+auto Lookup(std::string_view name) -> std::optional<Scalar>;
+auto IsInteger(Scalar type) -> bool;
+auto IsSigned(Scalar type) -> bool;
+auto IsFloat(Scalar type) -> bool;
+auto IsNumeric(Scalar type) -> bool;
+auto IsInhabited(Scalar type) -> bool;
+auto IsCopy(Scalar type) -> bool;
+
+// Scalar categories and program-owned type IDs are deliberately separate.
+auto ScalarOf(Types::TypeId type) -> Scalar;
+auto SourceType(Scalar scalar) -> Types::TypeId;
+inline auto IsInteger(Types::TypeId type) -> bool {
+  return Types::IsInteger(type);
+}
+inline auto IsSigned(Types::TypeId type) -> bool {
+  return Types::IsSigned(type);
+}
+inline auto IsFloat(Types::TypeId type) -> bool { return Types::IsFloat(type); }
+inline auto IsNumeric(Types::TypeId type) -> bool {
+  return Types::IsNumeric(type);
+}
 
 } // namespace Chtholly::Target

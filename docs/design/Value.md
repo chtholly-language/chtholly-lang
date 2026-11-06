@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 ## let 与 var
 
 在Chtholly之中，你可以使用let创建一个不可写的位置，使用var创建一个可写的位置，

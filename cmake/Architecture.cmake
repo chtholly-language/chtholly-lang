@@ -46,7 +46,7 @@ chtholly_export_directory("${PROJECT_SOURCE_DIR}")
 
 if(BUILD_TESTING)
   add_custom_target(chtholly_public_headers ALL)
-  foreach(module IN ITEMS target source diagnostic lex parse numeric sem_ir check ir lower runtime codegen driver)
+  foreach(module IN ITEMS types target source diagnostic lex parse numeric sem_ir check ir flow lower runtime codegen driver)
     if(CHTHOLLY_FRONTEND_ONLY AND module MATCHES "^(runtime|codegen|driver)$")
       continue()
     endif()

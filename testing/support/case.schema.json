@@ -48,7 +48,7 @@
           "type": "object", "additionalProperties": false, "required": ["category", "file", "line", "column"],
           "properties": {
             "category": { "enum": ["Arithmetic.Overflow", "Arithmetic.DivisionByZero", "Arithmetic.ShiftCount",
-              "Conversion.OutOfRange", "Conversion.PrecisionLoss", "Conversion.NonFinite", "Conversion.Fractional", "Panic", "Assertion"] },
+              "Conversion.OutOfRange", "Conversion.PrecisionLoss", "Conversion.NonFinite", "Conversion.Fractional", "Panic", "Assertion", "Index.OutOfBounds"] },
             "file": { "type": "string", "minLength": 1 },
             "line": { "type": "integer", "minimum": 1 }, "column": { "type": "integer", "minimum": 1 }
           }

@@ -18,7 +18,7 @@ from process import run
 
 FAILURE_CATEGORIES = {"Arithmetic.Overflow", "Arithmetic.DivisionByZero", "Arithmetic.ShiftCount",
                       "Conversion.OutOfRange", "Conversion.PrecisionLoss", "Conversion.NonFinite",
-                      "Conversion.Fractional", "Panic", "Assertion"}
+                      "Conversion.Fractional", "Panic", "Assertion", "Index.OutOfBounds"}
 RUN_KINDS = ("run", "run_fail", "run_abort")
 
 

@@ -1,0 +1,17 @@
+struct Token { value: i32 }
+struct Pair { first: Token, second: Token }
+enum Choice { Value { pair: Pair }, Empty }
+
+fn score(_ choice: Choice) -> i32 {
+    return match (choice) {
+        Choice::Value { pair: Pair { first, second } } => first.value + second.value,
+        Choice::Empty => 0,
+    };
+}
+
+fn main() -> i32 {
+    var pair = Pair { second: Token { value: 20 }, first: Token { value: 1 } };
+    let first = pair.first;
+    pair.first = Token { value: 22 };
+    return score(Choice::Value { pair });
+}

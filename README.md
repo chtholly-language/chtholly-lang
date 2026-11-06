@@ -18,7 +18,7 @@ Chtholly 有两个长期目标
 
 ## 当前进展
 
-Chtholly 是一个实验性的编译器实现，当前处于早期的 **R2 Primitive Types And Function（R3）**阶段：
+Chtholly 是一个实验性的编译器实现，当前处于早期的 **R3 Aggregates, Patterns, And Ownership Flow**阶段：
 
 具体进度可以见 docs/roadmap/roadmap.md 及 docs/design 文件夹
 

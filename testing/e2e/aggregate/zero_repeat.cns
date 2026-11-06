@@ -1,0 +1,8 @@
+fn main() -> i32 {
+    var seen = 0;
+    let values: i32[0] = [{ seen = seen + 1; 1 }; 0];
+    assert(seen == 1 && values.len == 0usize);
+    let empty: ![0] = [];
+    assert(empty.len == 0usize);
+    return 42;
+}

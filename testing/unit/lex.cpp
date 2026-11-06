@@ -87,8 +87,8 @@ TEST(lex, invalid_utf8) {
 }
 
 TEST(lex, unsupported_characters) {
-  for (const auto *text : {"@", "\xC3\xA9", ".5", "1.", "/*", "`bad name`",
-                           "0b2", "1__2", "1_", "1f16"}) {
+  for (const auto *text : {"\xC3\xA9", ".5", "1.", "/*", "`bad name`", "0b2",
+                           "1__2", "1_", "1f16"}) {
     SourceFile file(text);
     const auto source = file.read();
     Diagnostic::Diagnostics diagnostics;

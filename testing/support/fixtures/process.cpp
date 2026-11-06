@@ -172,15 +172,18 @@ auto FixtureMain(int argc, char **argv) -> int {
       std::cerr << "AddressSanitizer: fixture report\n";
       return 120;
     }
-    if (value == "run-language-error" || value == "run-wrong-category") {
+    if (value == "run-language-error" || value == "run-wrong-category" ||
+        value == "run-index-error") {
       const auto source =
           std::filesystem::u8path(argv[0]).parent_path().parent_path() /
           "input" / "input.cns";
       const auto utf8 = source.u8string();
       std::cerr << std::string(utf8.begin(), utf8.end())
                 << ":2:3: chtholly failure["
-                << (value == "run-language-error" ? "Arithmetic.DivisionByZero"
-                                                  : "Arithmetic.Overflow")
+                << (value == "run-index-error" ? "Index.OutOfBounds"
+                    : value == "run-language-error"
+                        ? "Arithmetic.DivisionByZero"
+                        : "Arithmetic.Overflow")
                 << "]\n";
       return 120;
     }

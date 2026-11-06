@@ -60,7 +60,13 @@ struct Limits {
 class Budget {
 public:
   explicit Budget(Limits limits = {}) : Boundaries(limits) {}
-  auto consume() -> bool { return Steps++ < Boundaries.EvaluationSteps; }
+  auto consume() -> bool {
+    if (Steps >= Boundaries.EvaluationSteps) {
+      return false;
+    }
+    ++Steps;
+    return true;
+  }
   auto limits() const -> const Limits & { return Boundaries; }
 
 private:
@@ -74,21 +80,27 @@ class Value {
 public:
   struct Storage;
   Value() = default;
-  auto type() const -> Target::Type { return Type; }
+  auto type() const -> Target::Scalar;
+  auto isMathematical() const -> bool;
   auto bits() const -> std::array<std::uint64_t, 2>;
   auto boolean() const -> bool;
   auto describe() const -> std::string;
   static auto Boolean(bool value) -> Value;
   static auto Unit() -> Value;
   static auto
-  FromBits(Target::Type type, std::array<std::uint64_t, 2> bits,
+  FromBits(Target::Scalar type, std::array<std::uint64_t, 2> bits,
            Target::Description target = Target::WindowsX64) -> Value;
+  static auto
+  FromBits(Types::TypeId type, std::array<std::uint64_t, 2> bits,
+           Target::Description target = Target::WindowsX64) -> Value {
+    return FromBits(Target::ScalarOf(type), bits, target);
+  }
 
 private:
   friend struct Access;
-  Value(Target::Type type, std::shared_ptr<const Storage> storage)
+  Value(Target::Scalar type, std::shared_ptr<const Storage> storage)
       : Type(type), Data(std::move(storage)) {}
-  Target::Type Type = Target::Type::Invalid;
+  Target::Scalar Type = Target::Scalar::Invalid;
   std::shared_ptr<const Storage> Data;
 };
 
@@ -100,14 +112,21 @@ struct Result {
 
 auto FailureName(Failure failure) -> std::string_view;
 auto IsRecoverable(Failure failure) -> bool;
-auto Literal(std::string_view digits, unsigned radix, Target::Type type,
+auto Literal(std::string_view digits, unsigned radix, Target::Scalar type,
              bool negative, Budget &budget,
              Target::Description target = Target::WindowsX64) -> Result;
+auto MathematicalLiteral(std::string_view digits, unsigned radix, bool negative,
+                         Budget &budget) -> Result;
 auto Unary(Operation op, const Value &value, Budget &budget,
            Target::Description target = Target::WindowsX64) -> Result;
 auto Binary(Operation op, const Value &left, const Value &right, Budget &budget,
             Target::Description target = Target::WindowsX64) -> Result;
-auto Convert(const Value &source, Target::Type targetType, Budget &budget,
+auto Convert(const Value &source, Target::Scalar targetType, Budget &budget,
              Target::Description target = Target::WindowsX64) -> Result;
+inline auto Convert(const Value &source, Types::TypeId targetType,
+                    Budget &budget,
+                    Target::Description target = Target::WindowsX64) -> Result {
+  return Convert(source, Target::ScalarOf(targetType), budget, target);
+}
 
 } // namespace Chtholly::Numeric

@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 ## As
 
 as 用于类型转换，其使用方式为 `源表达式 as 目标类型`。

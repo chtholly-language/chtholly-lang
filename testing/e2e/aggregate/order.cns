@@ -1,0 +1,22 @@
+struct Pair { first: i32, second: i32 }
+fn pick(x: i32, _ y: i32, label z: i32) -> i32 {
+    return x * 100 + y * 10 + z;
+}
+fn main() -> i32 {
+    var trace = 0;
+    let pair = Pair {
+        second: { trace = trace * 10 + 2; 2 },
+        first: { trace = trace * 10 + 1; 1 },
+    };
+    assert(trace == 21);
+    trace = 0;
+    let result = pick(
+        label: { trace = trace * 10 + 1; 1 },
+        { trace = trace * 10 + 2; 2 },
+        x: { trace = trace * 10 + 3; 3 },
+    );
+    assert(trace == 123);
+    assert(result == 321);
+    assert(pair.first == 1 && pair.second == 2);
+    return 42;
+}

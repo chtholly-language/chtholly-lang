@@ -1,0 +1,8 @@
+{
+  "schema_version": 2,
+  "name": "regression.aggregate.duplicate_argument",
+  "kind": "compile_fail",
+  "source": "duplicate_argument.cns",
+  "compile": { "exit_code": 1, "stderr": { "contains": ["duplicate_argument.cns:3:5: error:", "duplicate", "missing required argument"] } },
+  "basis": "R3-A28: unlabeled third argument targets the third parameter, duplicates label z and does not fill x"
+}

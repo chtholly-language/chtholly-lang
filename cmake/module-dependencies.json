@@ -44,11 +44,13 @@
     "sem_ir": {
       "links": [
         "numeric",
-        "source"
+        "source",
+        "types"
       ],
       "public": [
         "numeric",
-        "source"
+        "source",
+        "types"
       ],
       "platform": "frontend",
       "public_include_root": "toolchain/sem_ir/include",
@@ -76,7 +78,8 @@
         "numeric",
         "target",
         "runtime",
-        "diagnostic"
+        "diagnostic",
+        "flow"
       ],
       "public": [],
       "platform": "windows",
@@ -109,7 +112,8 @@
         "lower",
         "ir",
         "target",
-        "runtime"
+        "runtime",
+        "flow"
       ],
       "public": [],
       "platform": "windows",
@@ -128,8 +132,12 @@
       "public_include_root": "toolchain/target/include",
       "platform": "frontend",
       "private_root": "toolchain/target",
-      "public": [],
-      "links": []
+      "public": [
+        "types"
+      ],
+      "links": [
+        "types"
+      ]
     },
     "numeric": {
       "private_root": "toolchain/numeric",
@@ -156,13 +164,15 @@
       "private_root": "toolchain/ir",
       "public": [
         "numeric",
-        "source"
+        "source",
+        "types"
       ],
       "links": [
         "numeric",
         "source",
         "diagnostic",
-        "target"
+        "target",
+        "types"
       ]
     },
     "lower": {
@@ -190,6 +200,25 @@
       ],
       "links": [
         "target"
+      ]
+    },
+    "types": {
+      "platform": "frontend",
+      "public": [],
+      "public_include_root": "toolchain/types/include",
+      "private_root": "toolchain/types",
+      "links": []
+    },
+    "flow": {
+      "platform": "frontend",
+      "public": [
+        "ir"
+      ],
+      "public_include_root": "toolchain/flow/include",
+      "private_root": "toolchain/flow",
+      "links": [
+        "ir",
+        "diagnostic"
       ]
     }
   },
@@ -264,7 +293,9 @@
         "chtholly_numeric",
         "chtholly_target",
         "chtholly_ir",
-        "chtholly_lower"
+        "chtholly_lower",
+        "chtholly_flow",
+        "chtholly_types"
       ],
       "public": [],
       "testing": true
@@ -282,7 +313,9 @@
         "chtholly_numeric",
         "chtholly_target",
         "chtholly_ir",
-        "chtholly_lower"
+        "chtholly_lower",
+        "chtholly_flow",
+        "chtholly_types"
       ],
       "public": [],
       "testing": true
@@ -301,7 +334,9 @@
         "chtholly_target",
         "chtholly_ir",
         "chtholly_lower",
-        "chtholly_codegen"
+        "chtholly_codegen",
+        "chtholly_flow",
+        "chtholly_types"
       ],
       "public": [],
       "testing": true,
@@ -349,7 +384,9 @@
         "chtholly_numeric",
         "chtholly_target",
         "chtholly_ir",
-        "chtholly_lower"
+        "chtholly_lower",
+        "chtholly_flow",
+        "chtholly_types"
       ],
       "public": []
     },
@@ -369,7 +406,9 @@
         "chtholly_ir",
         "chtholly_lower",
         "chtholly_codegen",
-        "chtholly_codegen_test_adapter"
+        "chtholly_codegen_test_adapter",
+        "chtholly_flow",
+        "chtholly_types"
       ],
       "public": []
     },
@@ -387,7 +426,68 @@
       ],
       "platform": "windows",
       "links": [
-        "chtholly_codegen"
+        "chtholly_codegen",
+        "chtholly_flow"
+      ],
+      "testing": true
+    },
+    "chtholly_aggregate_tests": {
+      "public": [],
+      "testing": true,
+      "links": [
+        "GTest::gtest_main",
+        "chtholly_test_support",
+        "chtholly_source",
+        "chtholly_diagnostic",
+        "chtholly_lex",
+        "chtholly_parse",
+        "chtholly_check",
+        "chtholly_sem_ir",
+        "chtholly_numeric",
+        "chtholly_target",
+        "chtholly_ir",
+        "chtholly_lower",
+        "chtholly_flow",
+        "chtholly_types"
+      ]
+    },
+    "chtholly_flow_tests": {
+      "links": [
+        "GTest::gtest_main",
+        "chtholly_test_support",
+        "chtholly_source",
+        "chtholly_diagnostic",
+        "chtholly_lex",
+        "chtholly_parse",
+        "chtholly_check",
+        "chtholly_sem_ir",
+        "chtholly_numeric",
+        "chtholly_target",
+        "chtholly_ir",
+        "chtholly_lower",
+        "chtholly_flow",
+        "chtholly_types"
+      ],
+      "testing": true,
+      "public": []
+    },
+    "chtholly_coverage_tests": {
+      "public": [],
+      "links": [
+        "GTest::gtest_main",
+        "chtholly_test_support",
+        "chtholly_source",
+        "chtholly_diagnostic",
+        "chtholly_lex",
+        "chtholly_parse",
+        "chtholly_check",
+        "chtholly_sem_ir",
+        "chtholly_numeric",
+        "chtholly_target",
+        "chtholly_ir",
+        "chtholly_lower",
+        "chtholly_flow",
+        "chtholly_types"
       ],
       "testing": true
     }

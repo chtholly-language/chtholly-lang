@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 add_subdirectory(support)
 set(frontend_libraries Chtholly::Source Chtholly::Diagnostic Chtholly::Lex Chtholly::Parse
-  Chtholly::Check Chtholly::SemIR Chtholly::Numeric Chtholly::Target Chtholly::IR Chtholly::Lower)
+  Chtholly::Check Chtholly::SemIR Chtholly::Numeric Chtholly::Target Chtholly::IR Chtholly::Lower Chtholly::Flow Chtholly::Types)
 chtholly_gtest(chtholly_source_tests unit frontend SOURCES unit/source.cpp
   LIBRARIES Chtholly::Source CASES source.empty_eof source.line_endings source.byte_columns source.read_failure)
 chtholly_gtest(chtholly_diagnostic_tests unit frontend SOURCES unit/diagnostic.cpp
@@ -10,7 +10,8 @@ chtholly_gtest(chtholly_lex_tests unit frontend SOURCES unit/lex.cpp
   LIBRARIES Chtholly::Lex CASES lex.token_spans lex.eof_span lex.identifier_boundaries
   lex.bom_and_comments lex.invalid_utf8 lex.unsupported_characters lex.core_tokens_and_nested_comments)
 chtholly_gtest(chtholly_parse_tests unit frontend SOURCES unit/parse.cpp
-  LIBRARIES Chtholly::Parse CASES parse.minimum_tree parse.structural_failures parse.functions_precedence_and_never)
+  LIBRARIES Chtholly::Parse CASES parse.minimum_tree parse.structural_failures
+  parse.invalid_declaration_points_to_token parse.functions_precedence_and_never)
 chtholly_gtest(chtholly_check_tests unit frontend SOURCES unit/check.cpp
   LIBRARIES ${frontend_libraries} CASES
   check.integer_boundaries check.rejects_entry_type_and_overflow check.long_decimal
@@ -24,11 +25,47 @@ chtholly_gtest(chtholly_numeric_tests unit frontend SOURCES unit/numeric.cpp
   numeric.leading_zeroes_preserve_budget_and_value numeric.signed_zero_to_every_integer)
 chtholly_gtest(chtholly_ir_tests unit frontend SOURCES unit/ir.cpp
   LIBRARIES ${frontend_libraries} CASES ir.accepts_typed_control_flow ir.rejects_corrupted_records
-  ir.rejects_wrong_join_and_undefined_use)
+  ir.rejects_wrong_join_and_undefined_use ir.rejects_foreign_types_and_invalid_projections
+  ir.analysis_proof_owns_immutable_version ir.rejects_duplicate_logical_positions
+  ir.rejects_nondominating_branch_value ir.rejects_dynamic_index_without_its_bounds_proof)
+chtholly_gtest(chtholly_aggregate_tests unit frontend SOURCES unit/aggregate.cpp
+  LIBRARIES ${frontend_libraries} CASES
+  aggregate.nominal_alias_and_tuple_identity aggregate.const_lengths_and_cycles
+  aggregate.zero_arrays_and_uninhabited_entry aggregate.checked_copy_evidence
+  aggregate.partial_move_and_restoration aggregate.explicit_move_and_computed_results
+  aggregate.branch_join_ignores_returns aggregate.zero_sized_paths_are_distinct
+  aggregate.construction_order_is_explicit aggregate.repeat_seed_and_copy_boundaries
+  aggregate.fixed_and_dynamic_elements aggregate.moved_array_length_and_dynamic_reads
+  aggregate.index_base_protection aggregate.nested_match_coverage
+  aggregate.uninhabited_field_permutations aggregate.coverage_budget_is_not_a_counterexample
+  aggregate.or_alternatives_and_guard aggregate.trial_bindings_and_external_effects
+  aggregate.destructuring_permissions_and_negative_patterns aggregate.loop_values_and_labels
+  aggregate.loop_fixed_point aggregate.per_iteration_storage_and_condition_jumps
+  aggregate.loop_hints_respect_lexical_bindings
+  aggregate.divergent_break_does_not_set_result_type
+  aggregate.block_hints_include_field_destructuring
+  aggregate.nested_field_rest_stays_in_its_pattern
+  aggregate.numeric_recovery_loop_edges aggregate.independent_layout_table
+  aggregate.r2_behavior_and_argument_mapping aggregate.postponed_features_remain_rejected
+  aggregate.length_evaluates_base_and_sparse_scaling aggregate.analysis_limits_and_no_fake_normal_arm)
+chtholly_gtest(chtholly_flow_tests unit frontend SOURCES unit/flow_model.cpp
+  LIBRARIES ${frontend_libraries} CASES flow.independent_short_traces flow.join_and_loop_fixed_points)
+chtholly_gtest(chtholly_coverage_tests unit frontend SOURCES unit/coverage_model.cpp
+  LIBRARIES ${frontend_libraries} CASES coverage.independent_finite_domain coverage.wildcard_products_and_guard_exclusion)
 chtholly_gtest(chtholly_pipeline_tests integration frontend SOURCES integration/compiler/pipeline.cpp
   LIBRARIES ${frontend_libraries} CASES frontend.checked_pipeline frontend.uninhabited_function_has_no_body
   frontend.canonical_termination_identity frontend.divergent_recovery_source)
 if(NOT CHTHOLLY_FRONTEND_ONLY)
+  foreach(case IN ITEMS struct_record tuple_record array_record enum_payload enum_unit
+      zero_sized wide_projection mixed_labels enum_tag16 nested_record branch_record loop_record
+      edge_snapshot_false edge_snapshot_true)
+    chtholly_python_test("integration.aggregate.${case}" native
+      "${PROJECT_SOURCE_DIR}/testing/integration/compiler/native_aggregate.py"
+      --case "${case}" --fixture "$<TARGET_FILE:chtholly_object_fixture>"
+      --clang "${CHTHOLLY_LLVM_BIN}/clang-cl.exe"
+      --runtime "${PROJECT_BINARY_DIR}/bin/lib/chtholly-runtime.lib"
+      --root "${PROJECT_SOURCE_DIR}" --work-dir "${PROJECT_BINARY_DIR}/testing/native")
+  endforeach()
   chtholly_gtest(chtholly_codegen_tests integration native SOURCES integration/compiler/codegen.cpp
     LIBRARIES ${frontend_libraries} Chtholly::CodeGen CASES codegen.windows_coff codegen.canonical_abort_relocation
     codegen.block_storage_order_is_not_execution_order

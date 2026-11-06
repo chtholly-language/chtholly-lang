@@ -34,7 +34,8 @@ foreach(target IN ITEMS chtholly_target_builtins chtholly_target_runtime)
 endforeach()
 target_compile_features(chtholly_target_runtime PRIVATE cxx_std_20)
 target_include_directories(chtholly_target_runtime PRIVATE
-  "${CHTHOLLY_ROOT}/toolchain/runtime/include" "${CHTHOLLY_ROOT}/toolchain/target/include")
+  "${CHTHOLLY_ROOT}/toolchain/runtime/include" "${CHTHOLLY_ROOT}/toolchain/target/include"
+  "${CHTHOLLY_ROOT}/toolchain/types/include")
 set_target_properties(chtholly_target_runtime PROPERTIES OUTPUT_NAME chtholly-runtime
   ARCHIVE_OUTPUT_DIRECTORY "${CHTHOLLY_RUNTIME_OUTPUT}")
 file(GENERATE OUTPUT "${PROJECT_BINARY_DIR}/architecture/runtime.txt" CONTENT

@@ -31,6 +31,8 @@ TEST(parse, structural_failures) {
            "fn main() { 1 < 2 < 3; }",
            "fn main() { 1 == 2 != 3; }",
            "fn main() { var x = 0; x += 1; }",
+           "fn main() { let (var ..,) = (42,); }",
+           "fn main() { let (var .., value) = (0, 42); }",
        }) {
     SourceFile file(text);
     const auto source = file.read();
@@ -38,6 +40,29 @@ TEST(parse, structural_failures) {
     const auto tokens = Lex::Lex(source, diagnostics);
     ASSERT_TRUE(tokens);
     EXPECT_FALSE(Parse::Parse(*tokens, diagnostics)) << text;
+  }
+}
+TEST(parse, invalid_declaration_points_to_token) {
+  struct Case {
+    const char *Text;
+    const char *Location;
+  };
+  for (const auto &item : {
+           Case{"fn main() -> i32 { return 0; } extra\n", ":1:32: error:"},
+           Case{"pub extra name\n", ":1:5: error:"},
+       }) {
+    SourceFile file(item.Text);
+    const auto source = file.read();
+    Diagnostic::Diagnostics diagnostics;
+    const auto tokens = Lex::Lex(source, diagnostics);
+    ASSERT_TRUE(tokens);
+    EXPECT_FALSE(Parse::Parse(*tokens, diagnostics));
+    const auto rendered = Render(diagnostics, source);
+    EXPECT_NE(rendered.find(item.Location), std::string::npos) << rendered;
+    EXPECT_NE(rendered.find("expected a supported top-level declaration"),
+              std::string::npos)
+        << rendered;
+    EXPECT_EQ(rendered.find(":2:1:"), std::string::npos) << rendered;
   }
 }
 TEST(parse, functions_precedence_and_never) {

@@ -1,0 +1,9 @@
+{
+  "schema_version": 2,
+  "name": "e2e.aggregate.arrays_loops",
+  "kind": "run",
+  "source": "arrays_loops.cns",
+  "compile": { "exit_code": 0 },
+  "run": { "exit_code": 42, "stdout": { "exact": "" }, "stderr": { "exact": "" } },
+  "basis": "R3-A02/A12/A20/A21: pure local const length, dynamic indices, loop backedges, moved storage length and labeled value break"
+}

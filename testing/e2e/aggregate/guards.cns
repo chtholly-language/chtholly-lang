@@ -1,0 +1,13 @@
+enum Choice { A { x: i32, y: i32 }, B { x: i32, y: i32 } }
+fn main() -> i32 {
+    var seen = 0;
+    let input = Choice::A { x: 11, y: 22 };
+    let result = match (input) {
+        Choice::A { x, y } | Choice::A { x: y, y: x }
+            if ({ seen = seen + 1; false }) => x + y,
+        Choice::A { x, y } | Choice::B { x, y } => x + y,
+    };
+    assert(seen == 1);
+    assert(result == 33);
+    return 42;
+}

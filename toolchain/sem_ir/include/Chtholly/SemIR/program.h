@@ -2,6 +2,7 @@
 #pragma once
 #include <Chtholly/Numeric/numeric.h>
 #include <Chtholly/Source/source.h>
+#include <Chtholly/Types/types.h>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -16,7 +17,7 @@ class Checker;
 namespace Chtholly::SemIR {
 using Id = std::uint32_t;
 inline constexpr Id None = std::numeric_limits<Id>::max();
-using Type = Target::Type;
+using Type = Types::TypeId;
 enum class Kind {
   Literal,
   Local,
@@ -30,7 +31,46 @@ enum class Kind {
   Bind,
   Assign,
   Discard,
-  Return
+  Return,
+  Construct,
+  Project,
+  Index,
+  Length,
+  Copy,
+  Move,
+  Match,
+  While,
+  Loop,
+  Break,
+  Continue
+};
+enum class Category { Value, Place, TrialPlace };
+enum class PatternKind {
+  Binding,
+  Wildcard,
+  Unit,
+  Product,
+  Variant,
+  Boolean,
+  Integer,
+  Or
+};
+struct Pattern {
+  PatternKind Form = PatternKind::Wildcard;
+  Type ValueType;
+  Source::Location Location{};
+  Id Local = None;
+  Id Variant = None;
+  std::optional<Numeric::Value> Literal;
+  std::vector<Id> Children;
+  std::vector<std::uint64_t> Fields;
+};
+struct Arm {
+  Id Pattern = None;
+  Id Guard = None;
+  Id Body = None;
+  bool Reachable = true;
+  bool BodyReachable = true;
 };
 enum class Builtin { None, Panic, Abort, Assert };
 struct Node {
@@ -40,6 +80,11 @@ struct Node {
   Type ValueType = Type::Invalid;
   bool Completes = true;
   bool Executable = true;
+  Category ValueCategory = Category::Value;
+  bool Writable = false;
+  bool Repeat = false;
+  std::optional<std::uint64_t> FixedIndex;
+  std::uint64_t Count = 0;
   Numeric::Operation Operation = Numeric::Operation::Plus;
   std::optional<Numeric::Value> Constant;
   Numeric::Failure ConstantFailure = Numeric::Failure::None;
@@ -52,11 +97,14 @@ struct Node {
   std::vector<Id> Arguments;
   // Arguments retain source order; Slots maps each argument to a parameter.
   std::vector<Id> Slots;
+  std::vector<Arm> Arms;
+  Id Pattern = None;
 };
 struct Local {
   std::string Name;
   Type ValueType = Type::Invalid;
   bool Writable = false;
+  bool Trial = false;
 };
 struct Parameter {
   std::string Label;
@@ -76,6 +124,8 @@ struct Storage {
   std::string SourceName;
   std::vector<Node> Nodes;
   std::vector<Function> Functions;
+  std::vector<Pattern> Patterns;
+  std::optional<Types::Table> Types;
   Id Entry = None;
 };
 class Program {

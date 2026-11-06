@@ -42,7 +42,7 @@ class ArchitectureTests(unittest.TestCase):
             properties = runtime / "architecture/runtime.txt"
             properties.parent.mkdir()
             record = ("compiler=Clang\nversion=18.1.8\npointer_bytes=8\ncrt=MultiThreadedDLL\n"
-                      f"includes={root / 'toolchain/runtime/include'};{root / 'toolchain/target/include'}\noptions=/fp:strict\n")
+                      f"includes={root / 'toolchain/runtime/include'};{root / 'toolchain/target/include'};{root / 'toolchain/types/include'}\noptions=/fp:strict\n")
             properties.write_text(record, encoding="utf-8")
             CHECKER.inspect_runtime(root, build)
             for wrong_tool in ("", str(root / "llvm/bin/llvm-mt.exe"), str(root / "sdk/bin/x86/mt.exe")):

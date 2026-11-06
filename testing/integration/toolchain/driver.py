@@ -63,7 +63,7 @@ def main():
             shutil.copytree(Path(original_compiler).parent / "lib", package / "lib")
             metadata = package / "lib/chtholly-runtime.meta"
             original_metadata = metadata.read_text(encoding="utf-8")
-            metadata.write_text(original_metadata.replace("abi=2", "abi=999"), encoding="utf-8")
+            metadata.write_text(original_metadata.replace("abi=3", "abi=999"), encoding="utf-8")
             invoke([source, "-o", output], 1, "runtime identity")
             metadata.write_text(original_metadata.replace("implementation=", "implementation=wrong"), encoding="utf-8")
             invoke([source, "-o", output], 1, "runtime identity")
